@@ -27,7 +27,9 @@ contextBridge.exposeInMainWorld('launcher', {
 
   // System
   getSystemRam: () => ipcRenderer.invoke('get-system-ram'),
-  checkUpdate:  (opts) => ipcRenderer.invoke('check-update', opts),
+  checkUpdate:     (opts) => ipcRenderer.invoke('check-update', opts),
+  downloadUpdate:  (opts) => ipcRenderer.invoke('download-update', opts),
+  installUpdate:   (opts) => ipcRenderer.invoke('install-update', opts),
 
   // Mods
   getModProfiles:  (opts) => ipcRenderer.invoke('get-mod-profiles', opts),
@@ -106,6 +108,7 @@ contextBridge.exposeInMainWorld('launcher', {
     const allowed = [
       'download-progress', 'launch-progress', 'launch-log',
       'game-closed', 'game-crashed', 'modrinth-install-progress',
+      'update-download-progress',
     ];
     if (!allowed.includes(channel)) return () => {};
     const handler = (_, ...args) => cb(...args);

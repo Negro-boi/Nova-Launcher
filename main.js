@@ -17,7 +17,7 @@ const PROFILES_FILE  = path.join(LAUNCHER_DIR, 'profiles.json');
 const SERVERS_FILE   = path.join(LAUNCHER_DIR, 'servers.json');
 const SETTINGS_FILE  = path.join(LAUNCHER_DIR, 'settings.json');
 
-let packageVersion = '3.8.0';
+let packageVersion = '3.9.0';
 try { packageVersion = require('./package.json').version; } catch {}
 
 async function ensureDirs() {
@@ -675,18 +675,72 @@ ipcMain.handle('open-screenshots-folder', async (_, { gameDir }) => {
 });
 
 // ── Update checker ────────────────────────────────────────────────────────────
-ipcMain.handle('check-update', async (_, { repo = 'nova-launcher/nova-launcher' } = {}) => {
+ipcMain.handle('check-update', async (_, { repo = 'Negro-boi/Nova-Launcher' } = {}) => {
   try {
     const data = await fetchJson(`https://api.github.com/repos/${repo}/releases/latest`);
     const latestVersion = (data.tag_name || '').replace(/^v/, '');
+    // Find .exe asset
+    const assets = data.assets || [];
+    const exeAsset = assets.find(a => a.name.endsWith('.exe'));
     return {
       current: packageVersion,
       latest: latestVersion,
       hasUpdate: isNewerVersion(packageVersion, latestVersion),
       releaseUrl: data.html_url || '',
-      releaseNotes: (data.body || '').slice(0, 500),
+      downloadUrl: exeAsset?.browser_download_url || '',
+      fileName: exeAsset?.name || '',
+      fileSize: exeAsset?.size || 0,
+      releaseNotes: (data.body || '').slice(0, 800),
     };
   } catch (e) { return { error: e.message, current: packageVersion }; }
+});
+
+ipcMain.handle('download-update', async (_, { downloadUrl, fileName }) => {
+  try {
+    const dest = path.join(os.tmpdir(), fileName);
+    // Stream download with progress
+    await new Promise((resolve, reject) => {
+      const follow = (url, redirects = 0) => {
+        if (redirects > 10) return reject(new Error('Too many redirects'));
+        const mod = url.startsWith('https') ? https : http;
+        mod.get(url, { headers: { 'User-Agent': 'Nova-Launcher' } }, res => {
+          if (res.statusCode === 302 || res.statusCode === 301) {
+            return follow(res.headers.location, redirects + 1);
+          }
+          if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`));
+          const total = parseInt(res.headers['content-length'] || '0', 10);
+          let received = 0;
+          const out = require('fs').createWriteStream(dest);
+          res.on('data', chunk => {
+            received += chunk.length;
+            if (total > 0) {
+              mainWindow.webContents.send('update-download-progress', {
+                percent: Math.round((received / total) * 100),
+                received,
+                total,
+              });
+            }
+            out.write(chunk);
+          });
+          res.on('end', () => { out.end(); resolve(); });
+          res.on('error', reject);
+          out.on('error', reject);
+        }).on('error', reject);
+      };
+      follow(downloadUrl);
+    });
+    return { success: true, path: dest };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('install-update', async (_, { filePath }) => {
+  try {
+    // Launch installer and quit
+    const { exec } = require('child_process');
+    exec(`"${filePath}"`, { detached: true });
+    setTimeout(() => app.quit(), 1000);
+    return { success: true };
+  } catch (e) { return { success: false, error: e.message }; }
 });
 
 // ── Crash logs ────────────────────────────────────────────────────────────────

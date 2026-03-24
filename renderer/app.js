@@ -1093,23 +1093,90 @@ function updateServerCard(card, server) {
 }
 
 // ── Update checker ─────────────────────────────────────────────────────────
+let _updateInfo = null;
+
 async function checkForUpdates() {
-  if (settings.checkUpdate === false) return;
-  const repo = settings.updateRepo;
-  if (!repo) return;
+  const repo = settings.updateRepo || 'Negro-boi/Nova-Launcher';
   const r = await window.launcher.checkUpdate({ repo });
   if (r.hasUpdate) {
-    const banner = document.getElementById('updateBanner');
+    _updateInfo = r;
     document.getElementById('updateText').textContent = `v${r.latest} available`;
-    document.getElementById('updateLink').href = r.releaseUrl;
-    document.getElementById('updateLink').addEventListener('click', e => { e.preventDefault(); window.open(r.releaseUrl); });
-    banner.style.display = 'flex';
+    document.getElementById('updateBanner').style.display = 'flex';
   }
 }
 
 function setupTitlebarUpdate() {
   document.getElementById('updateDismiss').addEventListener('click', () =>
     document.getElementById('updateBanner').style.display = 'none');
+
+  document.getElementById('updateLink').addEventListener('click', () => openUpdateModal());
+  document.getElementById('updateModalClose').addEventListener('click', closeUpdateModal);
+  document.getElementById('updateSkipBtn').addEventListener('click', closeUpdateModal);
+  document.getElementById('updateDownloadBtn').addEventListener('click', startUpdateDownload);
+}
+
+function openUpdateModal() {
+  if (!_updateInfo) return;
+  document.getElementById('updateCurrentVer').textContent = `v${_updateInfo.current}`;
+  document.getElementById('updateNewVer').textContent = `v${_updateInfo.latest}`;
+  document.getElementById('updateNotes').textContent = _updateInfo.releaseNotes || 'No release notes.';
+  document.getElementById('updateProgressWrap').style.display = 'none';
+  document.getElementById('updateDownloadBtn').disabled = false;
+  document.getElementById('updateDownloadBtn').innerHTML = `
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+      <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+      <polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/>
+    </svg> Download & Install`;
+  document.getElementById('updateModal').style.display = 'flex';
+}
+
+function closeUpdateModal() {
+  document.getElementById('updateModal').style.display = 'none';
+}
+
+async function startUpdateDownload() {
+  if (!_updateInfo?.downloadUrl) {
+    toast('No download URL found. Open release page manually.', 'err');
+    window.open(_updateInfo?.releaseUrl);
+    return;
+  }
+  const btn = document.getElementById('updateDownloadBtn');
+  btn.disabled = true;
+  btn.textContent = 'Starting…';
+
+  const progressWrap = document.getElementById('updateProgressWrap');
+  const progressFill = document.getElementById('updateProgressFill');
+  const progressText = document.getElementById('updateProgressText');
+  progressWrap.style.display = '';
+  progressFill.style.width = '0%';
+  progressText.textContent = 'Connecting…';
+
+  // Listen for progress events
+  const unsub = window.launcher.on('update-download-progress', ({ percent, received, total }) => {
+    progressFill.style.width = `${percent}%`;
+    progressText.textContent = `Downloading… ${percent}%  (${formatBytes(received)} / ${formatBytes(total)})`;
+  });
+
+  const r = await window.launcher.downloadUpdate({
+    downloadUrl: _updateInfo.downloadUrl,
+    fileName: _updateInfo.fileName,
+  });
+  unsub();
+
+  if (!r.success) {
+    toast(`Download failed: ${r.error}`, 'err');
+    btn.disabled = false;
+    btn.textContent = 'Retry';
+    return;
+  }
+
+  progressFill.style.width = '100%';
+  progressText.textContent = 'Download complete! Launching installer…';
+  btn.textContent = 'Installing…';
+
+  setTimeout(async () => {
+    await window.launcher.installUpdate({ filePath: r.path });
+  }, 800);
 }
 
 // ── Java tab (keep existing) ───────────────────────────────────────────────
