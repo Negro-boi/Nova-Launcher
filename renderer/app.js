@@ -36,6 +36,7 @@ let toastTimer;
 
 // ── State ──────────────────────────────────────────────────────────────────
 let settings          = {};
+let isOffline         = false;
 let allVersions       = [];
 let selectedVersion   = '';
 let currentFilter     = 'release';
@@ -64,6 +65,17 @@ let servers           = [];
   setLoading('Starting…', 0);
 
   try { await loadSettings(); } catch(e) { console.error('loadSettings:', e); }
+
+  // Check connectivity — auto offline detection
+  setLoading('Checking connection…', 8);
+  try {
+    const conn = await window.launcher.checkConnectivity();
+    // Use manual override from settings if set, else auto
+    if (settings.offlineMode === true) isOffline = true;
+    else if (settings.offlineMode === false) isOffline = false;
+    else isOffline = !conn.online;
+  } catch { isOffline = true; }
+  applyOfflineMode(isOffline);
   setLoading('Loading versions…', 15);
   setupNavigation();
   setupRamSlider();
@@ -88,6 +100,7 @@ let servers           = [];
   setupSettingsSave();
   setupCrashModal();
   try { await initAbout(); } catch(e) { console.error('initAbout:', e); }
+  try { await initImport(); } catch(e) { console.error('initImport:', e); }
   checkForUpdates();
   setupTitlebarUpdate();
   setLoading('Ready!', 100);
@@ -122,6 +135,7 @@ async function loadSettings() {
   document.getElementById('settingsFullscreen').checked  = !!settings.fullscreen;
   document.getElementById('settingsUpdateRepo').value    = settings.updateRepo || '';
   document.getElementById('settingsCheckUpdate').checked = settings.checkUpdate !== false;
+  document.getElementById('settingsOfflineMode').checked = !!settings.offlineMode;
   const ram = settings.ram || 2048;
   document.getElementById('ramSlider').value = ram;
   document.getElementById('ramLabel').textContent = formatRam(ram);
@@ -136,6 +150,46 @@ function setupRamSlider() {
     toast(`Suggested: ${formatRam(info.suggested)} (50% of ${formatRam(info.total / 1024 / 1024)})`, 'ok');
   });
 }
+const MC_DIR = window.__mcDir || '';
+
+// ── Offline mode ───────────────────────────────────────────────────────────
+function applyOfflineMode(offline) {
+  isOffline = offline;
+
+  // Titlebar badge
+  const badge = document.getElementById('offlineBadge');
+  if (badge) badge.style.display = offline ? 'flex' : 'none';
+
+  // Status text in settings
+  const txt = document.getElementById('offlineStatusText');
+  if (txt) txt.textContent = offline ? '🔴 Offline' : '🟢 Online';
+
+  // Sync checkbox
+  const cb = document.getElementById('settingsOfflineMode');
+  if (cb && cb.checked !== offline) cb.checked = offline;
+
+  // Disable internet-requiring buttons
+  const onlineOnlyIds = [
+    'browseSearchBtn', 'mpSearchBtn', 'checkUpdatesBtn',
+    'rpBrowseSearchBtn', 'spBrowseSearchBtn', 'importPackBtn',
+    'checkConflictsBtn',
+  ];
+  onlineOnlyIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.disabled = offline;
+    el.title = offline ? 'Not available in offline mode' : '';
+  });
+
+  // Dim Browse nav tab
+  const browseNav = document.querySelector('[data-tab="browse"]');
+  if (browseNav) {
+    browseNav.style.opacity        = offline ? '0.4' : '';
+    browseNav.style.pointerEvents  = offline ? 'none' : '';
+    browseNav.title                = offline ? 'Not available in offline mode' : '';
+  }
+}
+
 function setupSettingsSave() {
   document.getElementById('saveSettingsBtn').addEventListener('click', async () => {
     const s = {
@@ -148,11 +202,32 @@ function setupSettingsSave() {
       javaPath:    document.getElementById('settingsJavaPath').value.trim(),
       updateRepo:  document.getElementById('settingsUpdateRepo').value.trim(),
       checkUpdate: document.getElementById('settingsCheckUpdate').checked,
+      offlineMode: document.getElementById('settingsOfflineMode').checked ? true : null,
     };
     await window.launcher.saveSettings(s);
     settings = s;
     document.getElementById('usernameInput').value = s.username;
+    // Apply offline mode immediately
+    const newOffline = s.offlineMode === true ? true : false;
+    applyOfflineMode(newOffline);
     toast('Settings saved!', 'ok');
+  });
+  // Live offline toggle (no need to press Save)
+  document.getElementById('settingsOfflineMode').addEventListener('change', async (e) => {
+    const forced = e.target.checked;
+    settings.offlineMode = forced ? true : null;
+    await window.launcher.saveSettings(settings);
+    isOffline = forced;
+    applyOfflineMode(isOffline);
+    toast(forced ? 'Offline mode enabled' : 'Switching to online mode…', forced ? 'ok' : '');
+    if (!forced) {
+      // Re-check connectivity
+      try {
+        const conn = await window.launcher.checkConnectivity();
+        isOffline = !conn.online;
+        applyOfflineMode(isOffline);
+      } catch { isOffline = true; applyOfflineMode(true); }
+    }
   });
   document.getElementById('usernameInput').addEventListener('input', (e) =>
     document.getElementById('settingsUsername').value = e.target.value);
@@ -410,28 +485,68 @@ async function loadVersions() {
   try {
     const data = await window.launcher.getVersions();
     allVersions = data.versions;
-    const latest = data.latest.release;
-    populateVersionSelect(allVersions);
-    renderVersionCards(allVersions.filter(v => v.type === 'release'));
+    const latest = data.latest?.release;
 
-    // Populate profile form version select
+    // Offline: filter to only locally downloaded versions
+    let displayVersions = allVersions;
+    if (isOffline) {
+      const downloaded = await getDownloadedVersions();
+      if (downloaded.length) {
+        displayVersions = allVersions.filter(v => downloaded.includes(v.id));
+      }
+      if (data.fromCache) setStatus('Offline — showing cached versions', 'warn');
+    }
+
+    populateVersionSelect(displayVersions);
+    renderVersionCards(displayVersions.filter(v => v.type === 'release'));
+
     const pfVer = document.getElementById('pfVersion');
-    allVersions.filter(v => v.type === 'release').forEach(v => pfVer.appendChild(new Option(v.id, v.id)));
+    displayVersions.filter(v => v.type === 'release').forEach(v => pfVer.appendChild(new Option(v.id, v.id)));
 
-    // Populate browse version filters
-    const releases = allVersions.filter(v => v.type === 'release').slice(0, 40);
-    ['browseVersionFilter','mpVersionFilter','mpVersionFilter'].forEach(id => {
+    const releases = displayVersions.filter(v => v.type === 'release').slice(0, 40);
+    ['browseVersionFilter','mpVersionFilter'].forEach(id => {
       const el = document.getElementById(id);
       if (!el) return;
       releases.forEach(v => el.appendChild(new Option(v.id, v.id)));
     });
 
     const sel = document.getElementById('versionSelect');
-    sel.value = settings.version || latest;
+    if (latest) sel.value = settings.version || latest;
     selectedVersion = sel.value;
   } catch (e) {
     setStatus(`Failed to fetch versions: ${e}`, 'error');
   }
+}
+
+async function getDownloadedVersions() {
+  const found = new Set();
+  // Check default MC dir and active profile's gameDir
+  const dirsToCheck = [null]; // null = default MC_DIR on backend
+  try {
+    const ap = profiles.find(p => p.id === activeProfileId);
+    if (ap?.gameDir) dirsToCheck.push(ap.gameDir);
+  } catch {}
+
+  for (const gameDir of dirsToCheck) {
+    try {
+      // List versions folder via IPC
+      const versionsPath = (gameDir || '') + '/versions';
+      const entries = await window.launcher.listDir({
+        path: (gameDir
+          ? gameDir + '/versions'
+          : '%LAUNCHER_DIR%/minecraft/versions') // placeholder; backend knows MC_DIR
+      });
+      entries.forEach(e => found.add(e));
+    } catch {}
+  }
+
+  // Fallback: get from actual local versions folders
+  try {
+    const defaultVersions = await window.launcher.listDir({ path: '__MC_VERSIONS__' });
+    defaultVersions.forEach(e => found.add(e));
+  } catch {}
+
+  return [...found];
 }
 function populateVersionSelect(list) {
   const sel = document.getElementById('versionSelect');
@@ -1678,4 +1793,158 @@ async function aboutStartDownload() {
   setTimeout(async () => {
     await window.launcher.installUpdate({ filePath: r.path });
   }, 600);
+}
+
+// ── Import from Launcher ───────────────────────────────────────────────────
+async function initImport() {
+  document.getElementById('scanLaunchersBtn').addEventListener('click', scanLaunchers);
+}
+
+async function scanLaunchers() {
+  document.getElementById('importIdle').style.display     = 'none';
+  document.getElementById('importNone').style.display     = 'none';
+  document.getElementById('importScanning').style.display = '';
+  document.getElementById('importLauncherList').style.display = 'none';
+
+  const launchers = await window.launcher.detectOtherLaunchers();
+
+  document.getElementById('importScanning').style.display = 'none';
+
+  if (!launchers.length) {
+    document.getElementById('importNone').style.display = '';
+    return;
+  }
+
+  const list = document.getElementById('importLauncherList');
+  list.innerHTML = '';
+  list.style.display = '';
+
+  launchers.forEach(launcher => {
+    const card = document.createElement('div');
+    card.className = 'launcher-card';
+
+    // Count totals
+    const totalMods = launcher.instances.reduce((s, i) => s + i.mods.length, 0);
+    const totalRp   = launcher.instances.reduce((s, i) => s + i.resourcePacks.length, 0);
+    const totalSp   = launcher.instances.reduce((s, i) => s + i.shaderPacks.length, 0);
+    const totalVer  = launcher.instances.reduce((s, i) => s + i.versions.length, 0);
+    const counts = [
+      totalVer  ? `${totalVer} versions`        : '',
+      totalMods ? `${totalMods} mods`            : '',
+      totalRp   ? `${totalRp} resource packs`    : '',
+      totalSp   ? `${totalSp} shader packs`      : '',
+    ].filter(Boolean).join(' · ') || 'empty';
+
+    card.innerHTML = `
+      <div class="launcher-card-header">
+        <span class="launcher-card-icon">${launcher.icon}</span>
+        <span class="launcher-card-name">${escapeHtml(launcher.name)}</span>
+        <span class="launcher-card-count">${escapeHtml(counts)}</span>
+        <svg class="launcher-card-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="9,18 15,12 9,6"/></svg>
+      </div>
+      <div class="launcher-instances"></div>`;
+
+    const header    = card.querySelector('.launcher-card-header');
+    const chevron   = card.querySelector('.launcher-card-chevron');
+    const instances = card.querySelector('.launcher-instances');
+
+    // Build instances
+    launcher.instances.forEach(inst => {
+      const row = document.createElement('div');
+      row.className = 'instance-row';
+
+      const badges = [
+        inst.versions.length  ? `${inst.versions.length} versions`     : '',
+        inst.mods.length      ? `${inst.mods.length} mods`              : '',
+        inst.resourcePacks.length ? `${inst.resourcePacks.length} RPs`  : '',
+        inst.shaderPacks.length   ? `${inst.shaderPacks.length} shaders`: '',
+      ].filter(Boolean);
+
+      row.innerHTML = `
+        <div class="instance-row-header">
+          <span class="instance-name">${escapeHtml(inst.name)}</span>
+        </div>
+        <div class="instance-meta">
+          ${badges.map(b => `<span class="instance-badge">${escapeHtml(b)}</span>`).join('')}
+        </div>
+        <div class="import-options">
+          ${inst.mods.length      ? `<label class="import-check-label"><input type="checkbox" class="imp-mods" checked/> Mods (${inst.mods.length})</label>` : ''}
+          ${inst.resourcePacks.length ? `<label class="import-check-label"><input type="checkbox" class="imp-rp" checked/> Resource Packs (${inst.resourcePacks.length})</label>` : ''}
+          ${inst.shaderPacks.length   ? `<label class="import-check-label"><input type="checkbox" class="imp-sp" checked/> Shader Packs (${inst.shaderPacks.length})</label>` : ''}
+          ${inst.versions.length  ? `<label class="import-check-label"><input type="checkbox" class="imp-ver"/> Versions (${inst.versions.length})</label>` : ''}
+          <select class="import-target-select imp-target-profile">
+            <option value="">→ Default profile</option>
+            ${profiles.map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`).join('')}
+          </select>
+          <button class="import-btn">Import</button>
+        </div>
+        <div class="import-result-bar" style="display:none"></div>`;
+
+      const btn = row.querySelector('.import-btn');
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        btn.textContent = 'Importing…';
+        const resultBar = row.querySelector('.import-result-bar');
+        resultBar.style.display = 'none';
+
+        const targetProfileId = row.querySelector('.imp-target-profile').value;
+        const targetProfile   = profiles.find(p => p.id === targetProfileId);
+        const targetGameDir   = targetProfile?.gameDir || '';
+
+        const importMods = row.querySelector('.imp-mods')?.checked || false;
+        const importRp   = row.querySelector('.imp-rp')?.checked   || false;
+        const importSp   = row.querySelector('.imp-sp')?.checked   || false;
+        const impVerEl   = row.querySelector('.imp-ver');
+        const importVers = impVerEl?.checked ? inst.versions : [];
+
+        const r = await window.launcher.importFromLauncher({
+          sourceGameDir:    inst.gameDir,
+          targetGameDir,
+          importMods,
+          importResourcePacks: importRp,
+          importShaderPacks:   importSp,
+          importVersions:      importVers,
+        });
+
+        btn.disabled = false;
+        btn.textContent = 'Import';
+
+        if (r.success) {
+          const parts = [
+            r.mods         ? `${r.mods} mods`         : '',
+            r.resourcePacks ? `${r.resourcePacks} RPs` : '',
+            r.shaderPacks   ? `${r.shaderPacks} shaders` : '',
+            r.versions      ? `${r.versions} versions` : '',
+          ].filter(Boolean);
+          resultBar.textContent = parts.length
+            ? `✓ Imported: ${parts.join(', ')}`
+            : '✓ Nothing new to import (already exists)';
+          resultBar.className = 'import-result-bar ok';
+          resultBar.style.display = '';
+          toast(`Import complete!`, 'ok');
+        } else {
+          resultBar.textContent = `✗ ${r.error || 'Import failed'}`;
+          resultBar.className = 'import-result-bar err';
+          resultBar.style.display = '';
+          toast('Import failed', 'err');
+        }
+      });
+
+      instances.appendChild(row);
+    });
+
+    // Toggle expand
+    header.addEventListener('click', () => {
+      chevron.classList.toggle('open');
+      instances.classList.toggle('open');
+    });
+
+    // Auto-expand if only one launcher found
+    if (launchers.length === 1) {
+      chevron.classList.add('open');
+      instances.classList.add('open');
+    }
+
+    list.appendChild(card);
+  });
 }

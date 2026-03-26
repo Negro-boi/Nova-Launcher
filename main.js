@@ -16,8 +16,9 @@ const INSTANCES_DIR  = path.join(LAUNCHER_DIR, 'instances');
 const PROFILES_FILE  = path.join(LAUNCHER_DIR, 'profiles.json');
 const SERVERS_FILE   = path.join(LAUNCHER_DIR, 'servers.json');
 const SETTINGS_FILE  = path.join(LAUNCHER_DIR, 'settings.json');
+const VERSIONS_CACHE = path.join(LAUNCHER_DIR, 'versions-cache.json');
 
-let packageVersion = '3.9.150';
+let packageVersion = '4.1.729';
 try { packageVersion = require('./package.json').version; } catch {}
 
 async function ensureDirs() {
@@ -91,18 +92,51 @@ ipcMain.on('kill-game', () => {
 });
 
 // ── Minecraft versions ───────────────────────────────────────────────────────
+ipcMain.handle('list-dir', async (_, { path: dirPath }) => {
+  try {
+    const resolved = dirPath === '__MC_VERSIONS__'
+      ? path.join(MC_DIR, 'versions')
+      : dirPath;
+    if (!await fs.pathExists(resolved)) return [];
+    return await fs.readdir(resolved);
+  } catch { return []; }
+});
+
+ipcMain.handle('check-connectivity', async () => {  return new Promise(resolve => {
+    const req = https.get('https://launchermeta.mojang.com', { timeout: 4000 }, res => {
+      res.destroy();
+      resolve({ online: true });
+    });
+    req.on('error', () => resolve({ online: false }));
+    req.on('timeout', () => { req.destroy(); resolve({ online: false }); });
+  });
+});
+
 ipcMain.handle('get-versions', async () => {
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
     https.get('https://launchermeta.mojang.com/mc/game/version_manifest_v2.json', (res) => {
       let data = '';
       res.on('data', c => data += c);
-      res.on('end', () => {
+      res.on('end', async () => {
         try {
           const m = JSON.parse(data);
-          resolve({ latest: m.latest, versions: m.versions.map(v => ({ id: v.id, type: v.type, url: v.url })) });
+          const result = { latest: m.latest, versions: m.versions.map(v => ({ id: v.id, type: v.type, url: v.url })) };
+          // Cache for offline use
+          await fs.writeJson(VERSIONS_CACHE, result).catch(() => {});
+          resolve(result);
         } catch (e) { reject(e.message); }
       });
-    }).on('error', e => reject(e.message));
+    }).on('error', async (e) => {
+      // Try cache fallback
+      try {
+        if (await fs.pathExists(VERSIONS_CACHE)) {
+          const cached = await fs.readJson(VERSIONS_CACHE);
+          resolve({ ...cached, fromCache: true });
+        } else {
+          reject(e.message);
+        }
+      } catch { reject(e.message); }
+    });
   });
 });
 
@@ -589,6 +623,263 @@ ipcMain.handle('install-modrinth-modpack', async (_, { projectId, gameDir }) => 
 });
 
 // ── Modpack export / import ───────────────────────────────────────────────────
+// ── Other Launcher Detection & Import ─────────────────────────────────────
+ipcMain.handle('detect-other-launchers', async () => {
+  const appdata  = process.env.APPDATA  || path.join(os.homedir(), 'AppData', 'Roaming');
+  const userprof = process.env.USERPROFILE || os.homedir();
+  const home     = os.homedir();
+
+  const launchers = [
+    {
+      id: 'official',
+      name: 'Official / TLauncher',
+      icon: '🟩',
+      basePath: path.join(appdata, '.minecraft'),
+      type: 'single',
+    },
+    {
+      id: 'tlauncher_legacy',
+      name: 'TLauncher (Legacy path)',
+      icon: '🔵',
+      basePath: path.join(appdata, '.tlauncher', 'minecraft'),
+      type: 'single',
+    },
+    {
+      id: 'tlauncher_2',
+      name: 'TLauncher (Alt path)',
+      icon: '🔵',
+      basePath: path.join(appdata, 'tlauncher', '.minecraft'),
+      type: 'single',
+    },
+    {
+      id: 'prism',
+      name: 'Prism Launcher',
+      icon: '🔷',
+      basePath: path.join(appdata, 'PrismLauncher', 'instances'),
+      type: 'instances',
+    },
+    {
+      id: 'multimc',
+      name: 'MultiMC',
+      icon: '🟦',
+      basePath: path.join(appdata, 'MultiMC', 'instances'),
+      type: 'instances',
+    },
+    {
+      id: 'curseforge',
+      name: 'CurseForge',
+      icon: '🟠',
+      basePath: path.join(userprof, 'curseforge', 'minecraft', 'Instances'),
+      type: 'instances',
+    },
+    {
+      id: 'gdlauncher',
+      name: 'GDLauncher',
+      icon: '🟣',
+      basePath: path.join(appdata, 'gdlauncher_next', 'instances'),
+      type: 'instances',
+    },
+    {
+      id: 'atlauncher',
+      name: 'ATLauncher',
+      icon: '🔴',
+      basePath: path.join(appdata, 'ATLauncher', 'instances'),
+      type: 'instances',
+    },
+    {
+      id: 'modrinth',
+      name: 'Modrinth App',
+      icon: '🟢',
+      basePath: path.join(appdata, 'com.modrinth.theseus', 'profiles'),
+      type: 'instances',
+    },
+    {
+      id: 'ferium',
+      name: '.minecraft (Custom)',
+      icon: '⚪',
+      basePath: path.join(home, '.minecraft'),
+      type: 'single',
+    },
+  ];
+
+  const found = [];
+  for (const launcher of launchers) {
+    if (!await fs.pathExists(launcher.basePath)) continue;
+
+    if (launcher.type === 'single') {
+      // Check it actually has a versions folder
+      const hasVersions = await fs.pathExists(path.join(launcher.basePath, 'versions'));
+      if (!hasVersions) continue;
+      const versions = await getLocalVersions(launcher.basePath);
+      const mods     = await getLocalMods(launcher.basePath);
+      const rps      = await getLocalResourcePacks(launcher.basePath);
+      const shaders  = await getLocalShaderPacks(launcher.basePath);
+      found.push({
+        ...launcher,
+        instances: [{
+          id:       'default',
+          name:     'Default',
+          gameDir:  launcher.basePath,
+          versions, mods, resourcePacks: rps, shaderPacks: shaders,
+        }],
+      });
+    } else {
+      // instances type — each subfolder is an instance
+      let entries = [];
+      try { entries = await fs.readdir(launcher.basePath); } catch { continue; }
+      const instances = [];
+      for (const entry of entries) {
+        const instanceDir = path.join(launcher.basePath, entry);
+        try {
+          const stat = await fs.stat(instanceDir);
+          if (!stat.isDirectory()) continue;
+          // Prism/MultiMC have a .minecraft subdir
+          const mcDir = await fs.pathExists(path.join(instanceDir, '.minecraft'))
+            ? path.join(instanceDir, '.minecraft')
+            : instanceDir;
+          const versions = await getLocalVersions(mcDir);
+          const mods     = await getLocalMods(mcDir);
+          const rps      = await getLocalResourcePacks(mcDir);
+          const shaders  = await getLocalShaderPacks(mcDir);
+          instances.push({
+            id:      entry,
+            name:    entry,
+            gameDir: mcDir,
+            versions, mods, resourcePacks: rps, shaderPacks: shaders,
+          });
+        } catch {}
+      }
+      if (!instances.length) continue;
+      found.push({ ...launcher, instances });
+    }
+  }
+  return found;
+});
+
+async function getLocalVersions(gameDir) {
+  const versDir = path.join(gameDir, 'versions');
+  if (!await fs.pathExists(versDir)) return [];
+  const entries = await fs.readdir(versDir);
+  const versions = [];
+  for (const e of entries) {
+    const jsonPath = path.join(versDir, e, `${e}.json`);
+    if (await fs.pathExists(jsonPath)) {
+      versions.push({ id: e, path: path.join(versDir, e) });
+    }
+  }
+  return versions;
+}
+
+async function getLocalMods(gameDir) {
+  const modsDir = path.join(gameDir, 'mods');
+  if (!await fs.pathExists(modsDir)) return [];
+  const files = await fs.readdir(modsDir);
+  const mods = [];
+  for (const f of files) {
+    if (!f.endsWith('.jar') && !f.endsWith('.jar.disabled')) continue;
+    try {
+      const stat = await fs.stat(path.join(modsDir, f));
+      mods.push({ name: f, size: stat.size, path: path.join(modsDir, f) });
+    } catch {}
+  }
+  return mods;
+}
+
+async function getLocalResourcePacks(gameDir) {
+  const rpDir = path.join(gameDir, 'resourcepacks');
+  if (!await fs.pathExists(rpDir)) return [];
+  const files = await fs.readdir(rpDir);
+  const rps = [];
+  for (const f of files) {
+    try {
+      const stat = await fs.stat(path.join(rpDir, f));
+      if (f.endsWith('.zip') || stat.isDirectory())
+        rps.push({ name: f, size: stat.size, path: path.join(rpDir, f) });
+    } catch {}
+  }
+  return rps;
+}
+
+async function getLocalShaderPacks(gameDir) {
+  const spDir = path.join(gameDir, 'shaderpacks');
+  if (!await fs.pathExists(spDir)) return [];
+  const files = await fs.readdir(spDir);
+  const sps = [];
+  for (const f of files) {
+    try {
+      const stat = await fs.stat(path.join(spDir, f));
+      if (f.endsWith('.zip') || stat.isDirectory())
+        sps.push({ name: f, size: stat.size, path: path.join(spDir, f) });
+    } catch {}
+  }
+  return sps;
+}
+
+ipcMain.handle('import-from-launcher', async (_, { sourceGameDir, targetGameDir, importMods, importResourcePacks, importShaderPacks, importVersions }) => {
+  const target = targetGameDir || MC_DIR;
+  const results = { mods: 0, resourcePacks: 0, shaderPacks: 0, versions: 0, errors: [] };
+
+  try {
+    if (importMods) {
+      const srcMods  = path.join(sourceGameDir, 'mods');
+      const destMods = path.join(target, 'mods');
+      if (await fs.pathExists(srcMods)) {
+        await fs.ensureDir(destMods);
+        const files = (await fs.readdir(srcMods)).filter(f => f.endsWith('.jar') || f.endsWith('.jar.disabled'));
+        for (const f of files) {
+          try {
+            await fs.copy(path.join(srcMods, f), path.join(destMods, f), { overwrite: false });
+            results.mods++;
+          } catch (e) { results.errors.push(`mod:${f}: ${e.message}`); }
+        }
+      }
+    }
+
+    if (importResourcePacks) {
+      const srcRp  = path.join(sourceGameDir, 'resourcepacks');
+      const destRp = path.join(target, 'resourcepacks');
+      if (await fs.pathExists(srcRp)) {
+        await fs.ensureDir(destRp);
+        const files = await fs.readdir(srcRp);
+        for (const f of files) {
+          try {
+            await fs.copy(path.join(srcRp, f), path.join(destRp, f), { overwrite: false });
+            results.resourcePacks++;
+          } catch (e) { results.errors.push(`rp:${f}: ${e.message}`); }
+        }
+      }
+    }
+
+    if (importShaderPacks) {
+      const srcSp  = path.join(sourceGameDir, 'shaderpacks');
+      const destSp = path.join(target, 'shaderpacks');
+      if (await fs.pathExists(srcSp)) {
+        await fs.ensureDir(destSp);
+        const files = await fs.readdir(srcSp);
+        for (const f of files) {
+          try {
+            await fs.copy(path.join(srcSp, f), path.join(destSp, f), { overwrite: false });
+            results.shaderPacks++;
+          } catch (e) { results.errors.push(`shader:${f}: ${e.message}`); }
+        }
+      }
+    }
+
+    if (importVersions) {
+      // Copy entire version folders
+      for (const ver of importVersions) {
+        const destVerDir = path.join(target, 'versions', ver.id);
+        try {
+          await fs.copy(ver.path, destVerDir, { overwrite: false });
+          results.versions++;
+        } catch (e) { results.errors.push(`version:${ver.id}: ${e.message}`); }
+      }
+    }
+
+    return { success: true, ...results };
+  } catch (e) { return { success: false, error: e.message, ...results }; }
+});
+
 ipcMain.handle('export-modpack', async (_, { gameDir, name, outputPath }) => {
   const root = gameDir || MC_DIR;
   try {

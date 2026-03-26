@@ -27,7 +27,10 @@
         </svg>
       </div>
       <span class="app-name">NOVA<span class="accent"> LAUNCHER</span></span>
-      <!-- Update banner (hidden until update found) -->
+      <div class="offline-badge" id="offlineBadge" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="11" height="11"><line x1="1" y1="1" x2="23" y2="23"/><path d="M16.72 11.06A10.94 10.94 0 0119 12.55M5 12.55a10.94 10.94 0 015.17-2.39M10.71 5.05A16 16 0 0122.56 9M1.42 9a15.91 15.91 0 014.7-2.88M8.53 16.11a6 6 0 016.95 0M12 20h.01"/></svg>
+        OFFLINE
+      </div>
       <div class="update-banner" id="updateBanner" style="display:none">
         <svg viewBox="0 0 16 16" fill="currentColor" width="11" height="11"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zm.75 3.75v3.5h2l-2.75 3.5L5.25 8.25h2v-3.5h1.5z"/></svg>
         <span id="updateText">Update available</span>
@@ -85,6 +88,10 @@
       <button class="nav-btn" data-tab="assets">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
         <span>Assets</span>
+      </button>
+      <button class="nav-btn" data-tab="import">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        <span>Import</span>
       </button>
       <button class="nav-btn" data-tab="about">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
@@ -484,6 +491,19 @@
           <div class="setting-row"><label class="setting-label">Username <span class="label-hint">(offline)</span></label><input type="text" id="settingsUsername" class="setting-input" maxlength="16" placeholder="Player"/></div>
         </div>
         <div class="settings-section">
+          <h3 class="section-title">Network</h3>
+          <div class="setting-row">
+            <label class="setting-label">
+              Offline Mode
+              <span class="label-hint">Auto-detected. Force on/off manually.</span>
+            </label>
+            <div style="display:flex;align-items:center;gap:10px">
+              <label class="toggle"><input type="checkbox" id="settingsOfflineMode"/><span class="toggle-slider"></span></label>
+              <span class="offline-status-text" id="offlineStatusText">Checking…</span>
+            </div>
+          </div>
+        </div>
+        <div class="settings-section">
           <h3 class="section-title">Memory</h3>
           <div class="setting-row">
             <label class="setting-label">RAM: <span id="ramLabel" class="accent-text">2048 MB</span></label>
@@ -647,6 +667,33 @@
           </div>
         </div>
       </div>
+    </section>
+
+    <!-- ══ IMPORT FROM LAUNCHER ══ -->
+    <section class="tab-panel" id="tab-import">
+      <div class="tab-header">
+        <h2 class="tab-title">Import from Launcher</h2>
+        <button class="save-btn" id="scanLaunchersBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          Scan
+        </button>
+      </div>
+
+      <div class="import-state" id="importIdle">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" width="52" height="52" style="color:var(--text3)"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        <p>Click Scan to detect installed launchers</p>
+        <span>Detects: Official, TLauncher, Prism, MultiMC, CurseForge, GDLauncher, ATLauncher, Modrinth</span>
+      </div>
+      <div class="import-state" id="importScanning" style="display:none">
+        <div class="spinner"></div>
+        <span>Scanning for launchers…</span>
+      </div>
+      <div class="import-state" id="importNone" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" width="52" height="52" style="color:var(--text3)"><circle cx="12" cy="12" r="10"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+        <p>No other launchers found</p>
+      </div>
+
+      <div id="importLauncherList" style="display:none; padding: 0 24px 24px;"></div>
     </section>
 
     <!-- ══ ABOUT ══ -->

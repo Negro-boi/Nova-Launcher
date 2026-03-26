@@ -27,6 +27,8 @@ contextBridge.exposeInMainWorld('launcher', {
 
   // System
   getSystemRam: () => ipcRenderer.invoke('get-system-ram'),
+  checkConnectivity: () => ipcRenderer.invoke('check-connectivity'),
+  listDir:           (opts) => ipcRenderer.invoke('list-dir', opts),
   checkUpdate:     (opts) => ipcRenderer.invoke('check-update', opts),
   downloadUpdate:  (opts) => ipcRenderer.invoke('download-update', opts),
   installUpdate:   (opts) => ipcRenderer.invoke('install-update', opts),
@@ -51,6 +53,10 @@ contextBridge.exposeInMainWorld('launcher', {
   // Modrinth modpacks
   searchModrinthModpacks:  (opts) => ipcRenderer.invoke('search-modrinth-modpacks', opts),
   installModrinthModpack:  (opts) => ipcRenderer.invoke('install-modrinth-modpack', opts),
+
+  // Other launcher import
+  detectOtherLaunchers: () => ipcRenderer.invoke('detect-other-launchers'),
+  importFromLauncher:   (opts) => ipcRenderer.invoke('import-from-launcher', opts),
 
   // Modpack export/import
   exportModpack: (opts) => ipcRenderer.invoke('export-modpack', opts),
@@ -115,4 +121,4 @@ contextBridge.exposeInMainWorld('launcher', {
     ipcRenderer.on(channel, handler);
     return () => ipcRenderer.removeListener(channel, handler);
   },
-});
+}); 
