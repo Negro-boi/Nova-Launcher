@@ -282,6 +282,25 @@
       <div class="profiles-grid" id="profilesGrid">
         <div class="loading-spinner"><div class="spinner"></div><span>Loading profiles…</span></div>
       </div>
+
+      <!-- Skin Viewer -->
+      <div class="skin-viewer-section">
+        <div class="about-card-header" style="margin-bottom:4px;width:100%">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          <span style="font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--text2);flex:1">Skin</span>
+          <div class="skin-view-toggle">
+            <button class="skin-view-btn active" id="skinBtn3D">3D</button>
+            <button class="skin-view-btn" id="skinBtn2D">2D</button>
+          </div>
+        </div>
+        <canvas id="skinCanvas" width="300" height="380" class="skin-canvas"></canvas>
+        <div class="skin-viewer-controls">
+          <input type="text" id="skinUsernameInput" class="setting-input" placeholder="Username…"/>
+          <button class="save-btn" id="skinLoadBtn">Load</button>
+        </div>
+        <div class="skin-viewer-status" id="skinStatus"></div>
+        <div class="skin-viewer-hint">Drag to rotate</div>
+      </div>
     </section>
 
     <!-- ══ VERSIONS ══ -->
@@ -701,84 +720,115 @@
       <div class="tab-header">
         <h2 class="tab-title">About</h2>
       </div>
-      <div class="about-content">
+      <div class="about-layout">
 
-        <!-- Logo + version -->
-        <div class="about-hero">
-          <img src="../assets/icon.png" class="about-logo" alt="Nova Launcher"/>
-          <div class="about-hero-text">
-            <div class="about-name">NOVA <span class="accent">LAUNCHER</span></div>
-            <div class="about-version" id="aboutVersion">v—</div>
-            <div class="about-desc">Offline · Fast · Open</div>
-          </div>
-        </div>
+        <!-- LEFT COLUMN -->
+        <div class="about-left">
 
-        <!-- Update card -->
-        <div class="about-card" id="aboutUpdateCard">
-          <div class="about-card-header">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="1,4 1,10 7,10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
-            <span>Updates</span>
-          </div>
-
-          <!-- States -->
-          <div class="about-update-state" id="aboutUpdateChecking">
-            <div class="spinner" style="width:16px;height:16px;border-width:2px"></div>
-            <span>Checking for updates…</span>
-          </div>
-          <div class="about-update-state" id="aboutUpdateLatest" style="display:none">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" style="color:var(--green)"><polyline points="20,6 9,17 4,12"/></svg>
-            <span>You're up to date!</span>
-            <button class="about-recheck-btn" id="aboutRecheckBtn">Check again</button>
-          </div>
-          <div class="about-update-state" id="aboutUpdateAvailable" style="display:none">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" style="color:var(--warning)"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-            <span id="aboutUpdateAvailableText">New version available!</span>
-          </div>
-
-          <!-- Version row -->
-          <div class="about-ver-row" id="aboutVerRow" style="display:none">
-            <div class="about-ver-box">
-              <span class="update-ver-label">Current</span>
-              <span class="update-ver-num" id="aboutCurrentVer">—</span>
-            </div>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" style="color:var(--green)"><polyline points="9,18 15,12 9,6"/></svg>
-            <div class="about-ver-box new">
-              <span class="update-ver-label">New</span>
-              <span class="update-ver-num" id="aboutNewVer">—</span>
+          <!-- Logo + version -->
+          <div class="about-hero">
+            <img src="../assets/icon.png" class="about-logo" alt="Nova Launcher"/>
+            <div class="about-hero-text">
+              <div class="about-name">NOVA <span class="accent">LAUNCHER</span></div>
+              <div class="about-version" id="aboutVersion">v—</div>
+              <div class="about-desc">Offline · Fast · Open</div>
             </div>
           </div>
 
-          <!-- Release notes -->
-          <div class="update-notes" id="aboutReleaseNotes" style="display:none"></div>
-
-          <!-- Progress -->
-          <div class="update-progress-wrap" id="aboutProgressWrap" style="display:none">
-            <div class="update-progress-bar">
-              <div class="update-progress-fill" id="aboutProgressFill"></div>
+          <!-- Update card -->
+          <div class="about-card" id="aboutUpdateCard">
+            <div class="about-card-header">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="1,4 1,10 7,10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+              <span>Updates</span>
             </div>
-            <span class="update-progress-text" id="aboutProgressText">Downloading…</span>
+            <div class="about-update-state" id="aboutUpdateChecking">
+              <div class="spinner" style="width:16px;height:16px;border-width:2px"></div>
+              <span>Checking for updates…</span>
+            </div>
+            <div class="about-update-state" id="aboutUpdateLatest" style="display:none">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" style="color:var(--green)"><polyline points="20,6 9,17 4,12"/></svg>
+              <span>You're up to date!</span>
+              <button class="about-recheck-btn" id="aboutRecheckBtn">Check again</button>
+            </div>
+            <div class="about-update-state" id="aboutUpdateAvailable" style="display:none">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" style="color:var(--warning)"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              <span id="aboutUpdateAvailableText">New version available!</span>
+            </div>
+            <div class="about-ver-row" id="aboutVerRow" style="display:none">
+              <div class="about-ver-box">
+                <span class="update-ver-label">Current</span>
+                <span class="update-ver-num" id="aboutCurrentVer">—</span>
+              </div>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" style="color:var(--green)"><polyline points="9,18 15,12 9,6"/></svg>
+              <div class="about-ver-box new">
+                <span class="update-ver-label">New</span>
+                <span class="update-ver-num" id="aboutNewVer">—</span>
+              </div>
+            </div>
+            <div class="update-progress-wrap" id="aboutProgressWrap" style="display:none">
+              <div class="update-progress-bar"><div class="update-progress-fill" id="aboutProgressFill"></div></div>
+              <span class="update-progress-text" id="aboutProgressText">Downloading…</span>
+            </div>
+            <div class="about-update-actions" id="aboutUpdateActions" style="display:none">
+              <button class="save-btn" id="aboutInstallBtn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Download & Install
+              </button>
+            </div>
           </div>
 
-          <!-- Action button -->
-          <div class="about-update-actions" id="aboutUpdateActions" style="display:none">
-            <button class="save-btn" id="aboutInstallBtn">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-              Download & Install
-            </button>
+          <!-- Info card -->
+          <div class="about-card about-info-card">
+            <div class="about-info-row"><span>Author</span><span>Rosilon</span></div>
+            <div class="about-info-row"><span>License</span><span>MIT</span></div>
+            <div class="about-info-row"><span>Electron</span><span>v28</span></div>
+            <div class="about-info-row">
+              <span>Repository</span>
+              <a class="about-link" id="aboutRepoLink" href="#">github.com/Rosilon/Nova-launcher</a>
+            </div>
           </div>
+
         </div>
 
-        <!-- Info card -->
-        <div class="about-card about-info-card">
-          <div class="about-info-row"><span>Author</span><span>Rosilon</span></div>
-          <div class="about-info-row"><span>License</span><span>MIT</span></div>
-          <div class="about-info-row"><span>Electron</span><span>v28</span></div>
-          <div class="about-info-row">
-            <span>Repository</span>
-            <a class="about-link" id="aboutRepoLink" href="#">github.com/Rosilon/Nova-launcher</a>
-          </div>
-        </div>
+        <!-- RIGHT COLUMN -->
+        <div class="about-right">
 
+          <!-- Release Notes -->
+          <div class="about-card about-changelog-card">
+            <div class="about-card-header">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+              <span>What's New in v4.1.729</span>
+            </div>
+            <div class="about-changelog-body">
+              <div class="changelog-section">
+                <div class="changelog-tag new">NEW</div>
+                <ul class="changelog-list">
+                  <li>Import from other launchers — Official, TLauncher, Prism, MultiMC, CurseForge, GDLauncher, ATLauncher, Modrinth</li>
+                  <li>Offline mode — auto-detects internet, falls back to cached versions, manual toggle in Settings</li>
+                  <li>About tab — version info, in-app updater, changelog</li>
+                  <li>Skin Viewer — 3D Minecraft skin preview in Profiles tab</li>
+                  <li>World Preview — seed-based biome map in Worlds tab</li>
+                  <li>Loading screen — smooth startup animation with progress bar</li>
+                  <li>Auto-updater — silent install without setup wizard</li>
+                  <li>Resource Pack browser — search &amp; install from Modrinth</li>
+                  <li>Shader Pack browser — search &amp; install from Modrinth</li>
+                  <li>World Manager — NBT parsing, backup, delete</li>
+                  <li>Mod conflict detector via Modrinth API</li>
+                </ul>
+              </div>
+              <div class="changelog-section">
+                <div class="changelog-tag fix">FIX</div>
+                <ul class="changelog-list">
+                  <li>Mods now install to correct flat mods/ folder</li>
+                  <li>Browse tab no longer breaks Assets sub-tabs</li>
+                  <li>Loading screen fully covers UI on startup</li>
+                  <li>Repository migrated to Rosilon/Nova-launcher</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+        </div>
       </div>
     </section>
 
@@ -813,6 +863,30 @@
   <div class="toast" id="toast"></div>
 
   <script src="app.js"></script>
+  <!-- World Map Modal -->
+  <div class="modal-overlay" id="worldMapModal" style="display:none">
+    <div class="worldmap-modal">
+      <div class="worldmap-modal-header">
+        <div class="worldmap-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><polygon points="1,6 1,22 8,18 16,22 23,18 23,2 16,6 8,2"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
+          <span id="worldMapTitle">World Map</span>
+        </div>
+        <button class="modal-close" id="worldMapClose">×</button>
+      </div>
+      <div class="worldmap-body">
+        <div class="worldmap-loading" id="worldMapLoading">
+          <div class="spinner"></div>
+          <span>Reading region files…</span>
+        </div>
+        <div class="worldmap-error" id="worldMapError" style="display:none"></div>
+        <div class="worldmap-img-wrap" id="worldMapImgWrap" style="display:none">
+          <img id="worldMapImg" class="worldmap-img" alt="World Map"/>
+          <div class="worldmap-info" id="worldMapInfo"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Update Modal -->
   <div class="modal-overlay" id="updateModal" style="display:none">
     <div class="update-modal">

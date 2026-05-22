@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld('launcher', {
 
   // System
   getSystemRam: () => ipcRenderer.invoke('get-system-ram'),
+  fetchSkin:         (opts) => ipcRenderer.invoke('fetch-skin', opts),
   checkConnectivity: () => ipcRenderer.invoke('check-connectivity'),
   listDir:           (opts) => ipcRenderer.invoke('list-dir', opts),
   checkUpdate:     (opts) => ipcRenderer.invoke('check-update', opts),
@@ -95,6 +96,7 @@ contextBridge.exposeInMainWorld('launcher', {
 
   // Worlds
   getWorlds:      (opts) => ipcRenderer.invoke('get-worlds', opts),
+  renderWorldMap: (opts) => ipcRenderer.invoke('render-world-map', opts),
   openWorldFolder:(opts) => ipcRenderer.invoke('open-world-folder', opts),
   deleteWorld:    (opts) => ipcRenderer.invoke('delete-world', opts),
   backupWorld:    (opts) => ipcRenderer.invoke('backup-world', opts),
@@ -121,4 +123,4 @@ contextBridge.exposeInMainWorld('launcher', {
     ipcRenderer.on(channel, handler);
     return () => ipcRenderer.removeListener(channel, handler);
   },
-}); 
+});

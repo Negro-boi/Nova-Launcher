@@ -1166,3 +1166,148 @@ body {
 }
 .import-result-bar.ok  { border-color: rgba(74,222,128,0.3); color: var(--green); }
 .import-result-bar.err { border-color: rgba(248,113,113,0.3); color: #f87171; }
+
+/* ── ABOUT TWO-COLUMN LAYOUT ─────────────────────────────────────────────────── */
+.about-layout {
+  display: grid; grid-template-columns: 380px 1fr;
+  gap: 16px; padding: 20px 24px 24px;
+  overflow-y: auto; height: calc(100% - 56px);
+  align-items: start;
+}
+.about-left  { display: flex; flex-direction: column; gap: 14px; }
+.about-right { display: flex; flex-direction: column; gap: 14px; }
+
+/* ── SKIN VIEWER ─────────────────────────────────────────────────────────────── */
+.about-skin-card { flex-shrink: 0; }
+.skin-viewer-wrap {
+  display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 4px 0 8px;
+}
+.skin-canvas {
+  border-radius: var(--radius-sm); background: var(--bg4);
+  border: 1px solid var(--border); cursor: grab;
+  image-rendering: pixelated;
+}
+.skin-canvas:active { cursor: grabbing; }
+.skin-viewer-controls {
+  display: flex; gap: 8px; width: 100%; padding: 0 4px;
+}
+.skin-viewer-status {
+  font-size: 11.5px; color: var(--text3); font-family: var(--mono); min-height: 16px;
+}
+.skin-viewer-hint {
+  font-size: 10.5px; color: var(--text3); letter-spacing: 0.04em;
+}
+
+/* ── CHANGELOG ───────────────────────────────────────────────────────────────── */
+.about-changelog-card { flex: 1; min-height: 0; }
+.about-changelog-body {
+  display: flex; flex-direction: column; gap: 14px;
+  max-height: 340px; overflow-y: auto; padding-right: 4px;
+}
+.changelog-section { display: flex; gap: 10px; }
+.changelog-tag {
+  font-size: 9px; font-weight: 800; letter-spacing: 0.12em;
+  padding: 3px 7px; border-radius: 4px; height: fit-content;
+  flex-shrink: 0; margin-top: 2px;
+}
+.changelog-tag.new  { background: rgba(74,222,128,0.12); color: var(--green); border: 1px solid rgba(74,222,128,0.3); }
+.changelog-tag.fix  { background: rgba(96,165,250,0.12); color: #60a5fa; border: 1px solid rgba(96,165,250,0.3); }
+.changelog-tag.impr { background: rgba(251,191,36,0.10); color: var(--warning); border: 1px solid rgba(251,191,36,0.3); }
+.changelog-list {
+  margin: 0; padding: 0 0 0 14px;
+  font-size: 12px; color: var(--text2); line-height: 1.8;
+}
+.changelog-list li { margin: 0; }
+
+/* ── SKIN VIEWER IN PROFILES ─────────────────────────────────────────────────── */
+.skin-viewer-section {
+  position: absolute; top: 56px; right: 0; bottom: 0; width: 340px;
+  background: var(--bg2); border-left: 1px solid var(--border);
+  padding: 16px 18px; display: flex; flex-direction: column;
+  align-items: stretch; overflow: hidden; gap: 10px; box-sizing: border-box;
+}
+#tab-profiles { position: relative; overflow: hidden; }
+#tab-profiles .profiles-grid { margin-right: 340px; overflow-y: auto; }
+#skinCanvas {
+  width: 100% !important;
+  height: min(48vh, 380px) !important;
+  min-height: 280px;
+  flex: 1 1 auto;
+}
+.skin-canvas.dragging { cursor: grabbing; }
+
+/* ── WORLD MAP MODAL ─────────────────────────────────────────────────────────── */
+.worldmap-modal {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: var(--radius); width: 90vw; max-width: 900px;
+  max-height: 88vh; display: flex; flex-direction: column;
+  box-shadow: 0 32px 80px rgba(0,0,0,0.7); animation: fade-up 0.2s ease;
+}
+.worldmap-modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.worldmap-title {
+  display: flex; align-items: center; gap: 9px;
+  font-size: 14px; font-weight: 700; color: var(--green);
+}
+.worldmap-body {
+  flex: 1; overflow: auto; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; padding: 20px; gap: 12px;
+  min-height: 300px;
+}
+.worldmap-loading {
+  display: flex; flex-direction: column; align-items: center; gap: 14px;
+  color: var(--text2); font-size: 13px;
+}
+.worldmap-error {
+  color: #f87171; font-size: 13px; text-align: center;
+}
+.worldmap-img-wrap {
+  display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%;
+}
+.worldmap-img {
+  max-width: 100%; max-height: 65vh; border-radius: var(--radius);
+  border: 1px solid var(--border); image-rendering: pixelated;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+}
+.worldmap-info {
+  font-size: 11px; color: var(--text3); font-family: var(--mono);
+}
+
+/* ── SKIN VIEWER TOGGLE ──────────────────────────────────────────────────────── */
+.skin-view-toggle {
+  display: flex; gap: 0; background: var(--bg4);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  overflow: hidden; flex-shrink: 0;
+}
+.skin-view-btn {
+  background: none; border: none; color: var(--text3);
+  font-family: var(--font); font-size: 10px; font-weight: 700;
+  padding: 4px 12px; cursor: pointer; transition: all var(--trans);
+  letter-spacing: 0.06em;
+}
+.skin-view-btn.active {
+  background: var(--green-glow); color: var(--green);
+  border-right: 1px solid var(--green3);
+}
+.skin-viewer-controls {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; width: 100%;
+}
+.skin-viewer-controls .setting-input {
+  font-size: 12px; padding: 7px 9px; width: 100%; min-width: 0;
+}
+.skin-viewer-controls .save-btn {
+  font-size: 10px; padding: 7px 12px; white-space: nowrap;
+}
+
+@media (max-width: 1120px) {
+  .skin-viewer-section {
+    position: relative; top: auto; right: auto; bottom: auto; width: auto;
+    margin: 0 24px 24px; border-left: none; border-top: 1px solid var(--border);
+    min-height: 420px;
+  }
+  #tab-profiles { overflow-y: auto; }
+  #tab-profiles .profiles-grid { margin-right: 0; overflow: visible; }
+  #skinCanvas { height: 320px !important; }
+}

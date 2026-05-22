@@ -133,8 +133,6 @@ async function loadSettings() {
   document.getElementById('settingsWidth').value         = settings.width    || 854;
   document.getElementById('settingsHeight').value        = settings.height   || 480;
   document.getElementById('settingsFullscreen').checked  = !!settings.fullscreen;
-  document.getElementById('settingsUpdateRepo').value    = settings.updateRepo || '';
-  document.getElementById('settingsCheckUpdate').checked = settings.checkUpdate !== false;
   document.getElementById('settingsOfflineMode').checked = !!settings.offlineMode;
   const ram = settings.ram || 2048;
   document.getElementById('ramSlider').value = ram;
@@ -200,15 +198,12 @@ function setupSettingsSave() {
       height:      parseInt(document.getElementById('settingsHeight').value, 10),
       fullscreen:  document.getElementById('settingsFullscreen').checked,
       javaPath:    document.getElementById('settingsJavaPath').value.trim(),
-      updateRepo:  document.getElementById('settingsUpdateRepo').value.trim(),
-      checkUpdate: document.getElementById('settingsCheckUpdate').checked,
       offlineMode: document.getElementById('settingsOfflineMode').checked ? true : null,
     };
     await window.launcher.saveSettings(s);
     settings = s;
     document.getElementById('usernameInput').value = s.username;
-    // Apply offline mode immediately
-    const newOffline = s.offlineMode === true ? true : false;
+    const newOffline = s.offlineMode === true;
     applyOfflineMode(newOffline);
     toast('Settings saved!', 'ok');
   });
@@ -1355,12 +1350,14 @@ async function refreshWorlds() {
       </div>
       <div class="world-card-actions">
         <button class="wc-btn" title="Open folder">📂</button>
+        <button class="wc-btn" title="View world map">🗺</button>
         <button class="wc-btn" title="Backup world">💾</button>
         <button class="wc-btn danger" title="Delete world">🗑</button>
       </div>`;
-    const [btnOpen, btnBackup, btnDel] = card.querySelectorAll('.wc-btn');
+    const [btnOpen, btnMap, btnBackup, btnDel] = card.querySelectorAll('.wc-btn');
     btnOpen.addEventListener('click', () =>
       window.launcher.openWorldFolder({ worldPath: w.path }));
+    btnMap.addEventListener('click', () => openWorldMapModal(w));
     btnBackup.addEventListener('click', async () => {
       btnBackup.textContent = '⏳';
       const r = await window.launcher.backupWorld({ worldPath: w.path, worldName: w.levelName || w.folder });
@@ -1375,6 +1372,7 @@ async function refreshWorlds() {
       toast('World deleted.', 'ok');
     });
     grid.appendChild(card);
+
   });
 }
 
@@ -1947,4 +1945,565 @@ async function scanLaunchers() {
 
     list.appendChild(card);
   });
+}
+
+
+// ── Skin Viewer ────────────────────────────────────────────────────────────
+(function initSkinViewer() {
+  const canvas = document.getElementById('skinCanvas');
+  if (!canvas) return;
+  const gl = canvas.getContext('webgl', { alpha: true, antialias: true, premultipliedAlpha: false })
+    || canvas.getContext('experimental-webgl', { alpha: true, antialias: true });
+  const statusEl = document.getElementById('skinStatus');
+  const hintEl = document.querySelector('.skin-viewer-hint');
+  const btn3D = document.getElementById('skinBtn3D');
+  const btn2D = document.getElementById('skinBtn2D');
+  const nameInput = document.getElementById('skinUsernameInput');
+
+  if (!gl) {
+    initSkinViewer2DFallback(canvas, statusEl, nameInput);
+    return;
+  }
+
+  let yaw = 0.45;
+  let pitch = -0.16;
+  let zoom = 1;
+  let dragging = false;
+  let lx = 0;
+  let ly = 0;
+  let viewMode = '3d';
+  let texture = null;
+  let disposed = false;
+
+  const program = createSkinProgram(gl);
+  const loc = {
+    pos: gl.getAttribLocation(program, 'aPosition'),
+    uv: gl.getAttribLocation(program, 'aUv'),
+    normal: gl.getAttribLocation(program, 'aNormal'),
+    mvp: gl.getUniformLocation(program, 'uMvp'),
+    light: gl.getUniformLocation(program, 'uLight'),
+    sampler: gl.getUniformLocation(program, 'uSkin'),
+    alpha: gl.getUniformLocation(program, 'uAlpha'),
+  };
+  const mesh = buildSkinMesh();
+  const buffers = uploadSkinMesh(gl, mesh);
+
+  gl.useProgram(program);
+  gl.uniform1i(loc.sampler, 0);
+  gl.enable(gl.DEPTH_TEST);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  gl.disable(gl.CULL_FACE);
+  texture = createSkinTexture(gl, createDefaultSkinCanvas());
+  if (statusEl) statusEl.textContent = 'Enter username to load skin';
+
+  function resizeCanvas() {
+    const rect = canvas.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = Math.max(1, Math.floor(rect.width * dpr));
+    const h = Math.max(1, Math.floor(rect.height * dpr));
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+    }
+    gl.viewport(0, 0, canvas.width, canvas.height);
+  }
+
+  const resizeObserver = window.ResizeObserver ? new ResizeObserver(resizeCanvas) : null;
+  resizeObserver?.observe(canvas);
+  window.addEventListener('resize', resizeCanvas);
+
+  canvas.addEventListener('mousedown', e => {
+    dragging = true;
+    lx = e.clientX;
+    ly = e.clientY;
+    canvas.classList.add('dragging');
+  });
+  window.addEventListener('mouseup', () => {
+    dragging = false;
+    canvas.classList.remove('dragging');
+  });
+  window.addEventListener('mousemove', e => {
+    if (!dragging || viewMode !== '3d') return;
+    yaw += (e.clientX - lx) * 0.012;
+    pitch += (e.clientY - ly) * 0.008;
+    pitch = Math.max(-0.62, Math.min(0.62, pitch));
+    lx = e.clientX;
+    ly = e.clientY;
+  });
+  canvas.addEventListener('wheel', e => {
+    zoom = Math.max(0.72, Math.min(1.7, zoom - e.deltaY * 0.001));
+    e.preventDefault();
+  }, { passive: false });
+
+  btn3D?.addEventListener('click', () => setSkinMode('3d'));
+  btn2D?.addEventListener('click', () => setSkinMode('2d'));
+  document.getElementById('skinLoadBtn')?.addEventListener('click', loadSkin);
+  nameInput?.addEventListener('keydown', e => e.key === 'Enter' && loadSkin());
+
+  function setSkinMode(mode) {
+    viewMode = mode;
+    btn3D?.classList.toggle('active', mode === '3d');
+    btn2D?.classList.toggle('active', mode === '2d');
+    if (hintEl) hintEl.textContent = mode === '3d' ? 'Drag to rotate - scroll to zoom' : 'Front preview';
+  }
+
+  function renderSkinFrame() {
+    if (disposed) return;
+    resizeCanvas();
+    if (!dragging && viewMode === '3d') yaw += 0.0045;
+
+    gl.clearColor(0.06, 0.075, 0.07, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.useProgram(program);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+
+    const aspect = canvas.width / Math.max(1, canvas.height);
+    const projection = mat4Perspective(42 * Math.PI / 180, aspect, 0.1, 120);
+    const distance = viewMode === '3d' ? 48 / zoom : 54 / zoom;
+    const view = mat4LookAt([0, 0, distance], [0, 0, 0], [0, 1, 0]);
+    const rotation = mat4Multiply(mat4RotateX(pitch), mat4RotateY(yaw));
+    const model = viewMode === '3d'
+      ? mat4Multiply(rotation, mat4Translate(0, -16, 0))
+      : mat4Translate(0, -16, 0);
+    const mvp = mat4Multiply(projection, mat4Multiply(view, model));
+
+    gl.uniformMatrix4fv(loc.mvp, false, mvp);
+    gl.uniform3f(loc.light, -0.35, 0.65, 0.68);
+    bindSkinBuffers(gl, loc, buffers);
+
+    gl.depthMask(true);
+    gl.uniform1f(loc.alpha, 1);
+    gl.drawElements(gl.TRIANGLES, mesh.baseCount, gl.UNSIGNED_SHORT, 0);
+
+    gl.depthMask(false);
+    gl.uniform1f(loc.alpha, 0.96);
+    gl.drawElements(gl.TRIANGLES, mesh.overlayCount, gl.UNSIGNED_SHORT, mesh.baseCount * 2);
+    gl.depthMask(true);
+
+    requestAnimationFrame(renderSkinFrame);
+  }
+
+  async function loadSkin() {
+    const username = (nameInput?.value || '').trim();
+    if (!username) return;
+    if (!/^[A-Za-z0-9_]{3,16}$/.test(username)) {
+      if (statusEl) {
+        statusEl.textContent = 'Invalid Minecraft username';
+        statusEl.style.color = '#f87171';
+      }
+      return;
+    }
+    if (statusEl) {
+      statusEl.textContent = 'Loading...';
+      statusEl.style.color = 'var(--text3)';
+    }
+    try {
+      const r = await window.launcher.fetchSkin({ username });
+      if (r.error) throw new Error(r.error);
+      const img = await loadSkinImage(`data:image/png;base64,${r.skinBase64}`);
+      const source = normalizeSkinImage(img);
+      const nextTexture = createSkinTexture(gl, source);
+      if (texture) gl.deleteTexture(texture);
+      texture = nextTexture;
+      if (statusEl) {
+        statusEl.textContent = r.username || username;
+        statusEl.style.color = 'var(--green)';
+      }
+    } catch (e) {
+      if (statusEl) {
+        statusEl.textContent = e.message || 'Skin load failed';
+        statusEl.style.color = '#f87171';
+      }
+    }
+  }
+
+  setTimeout(() => {
+    const u = document.getElementById('settingsUsername')?.value;
+    if (u && u !== 'Player' && nameInput) {
+      nameInput.value = u;
+      loadSkin();
+    }
+  }, 2500);
+
+  resizeCanvas();
+  renderSkinFrame();
+
+  window.addEventListener('beforeunload', () => {
+    disposed = true;
+    resizeObserver?.disconnect();
+    window.removeEventListener('resize', resizeCanvas);
+    if (texture) gl.deleteTexture(texture);
+  });
+})();
+
+function createSkinProgram(gl) {
+  const vs = `
+    attribute vec3 aPosition;
+    attribute vec2 aUv;
+    attribute vec3 aNormal;
+    uniform mat4 uMvp;
+    varying vec2 vUv;
+    varying float vLight;
+    uniform vec3 uLight;
+    void main() {
+      vec3 n = normalize(aNormal);
+      vLight = 0.58 + max(dot(n, normalize(uLight)), 0.0) * 0.42;
+      vUv = aUv;
+      gl_Position = uMvp * vec4(aPosition, 1.0);
+    }`;
+  const fs = `
+    precision mediump float;
+    varying vec2 vUv;
+    varying float vLight;
+    uniform sampler2D uSkin;
+    uniform float uAlpha;
+    void main() {
+      vec4 color = texture2D(uSkin, vUv);
+      if (color.a < 0.08) discard;
+      gl_FragColor = vec4(color.rgb * vLight, color.a * uAlpha);
+    }`;
+  const program = gl.createProgram();
+  gl.attachShader(program, compileSkinShader(gl, gl.VERTEX_SHADER, vs));
+  gl.attachShader(program, compileSkinShader(gl, gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(program);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    throw new Error(gl.getProgramInfoLog(program) || 'Skin shader link failed');
+  }
+  return program;
+}
+
+function compileSkinShader(gl, type, src) {
+  const shader = gl.createShader(type);
+  gl.shaderSource(shader, src);
+  gl.compileShader(shader);
+  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+    throw new Error(gl.getShaderInfoLog(shader) || 'Skin shader compile failed');
+  }
+  return shader;
+}
+
+function buildSkinMesh() {
+  const base = [];
+  const overlay = [];
+  addCuboid(base, [-4, 24, -4], [4, 32, 4], headUv());
+  addCuboid(base, [-4, 12, -2], [4, 24, 2], bodyUv(20, 16));
+  addCuboid(base, [-8, 12, -2], [-4, 24, 2], limbUv(40, 16));
+  addCuboid(base, [4, 12, -2], [8, 24, 2], limbUv(32, 48));
+  addCuboid(base, [-4, 0, -2], [0, 12, 2], limbUv(0, 16));
+  addCuboid(base, [0, 0, -2], [4, 12, 2], limbUv(16, 48));
+
+  addCuboid(overlay, [-4.5, 23.5, -4.5], [4.5, 32.5, 4.5], headOverlayUv());
+  addCuboid(overlay, [-4.25, 11.75, -2.25], [4.25, 24.25, 2.25], bodyUv(20, 32));
+  addCuboid(overlay, [-8.25, 11.75, -2.25], [-3.75, 24.25, 2.25], limbUv(40, 32));
+  addCuboid(overlay, [3.75, 11.75, -2.25], [8.25, 24.25, 2.25], limbUv(48, 48));
+  addCuboid(overlay, [-4.25, -0.25, -2.25], [0.25, 12.25, 2.25], limbUv(0, 32));
+  addCuboid(overlay, [-0.25, -0.25, -2.25], [4.25, 12.25, 2.25], limbUv(0, 48));
+
+  const vertices = [];
+  const indices = [];
+  base.forEach(face => addFaceToMesh(face, vertices, indices));
+  const baseCount = indices.length;
+  overlay.forEach(face => addFaceToMesh(face, vertices, indices));
+  return { vertices: new Float32Array(vertices), indices: new Uint16Array(indices), baseCount, overlayCount: indices.length - baseCount };
+}
+
+function addCuboid(out, min, max, uv) {
+  const [x1, y1, z1] = min;
+  const [x2, y2, z2] = max;
+  out.push({ p: [[x1,y1,z1],[x2,y1,z1],[x2,y2,z1],[x1,y2,z1]], uv: uv.front, n: [0,0,-1] });
+  out.push({ p: [[x2,y1,z2],[x1,y1,z2],[x1,y2,z2],[x2,y2,z2]], uv: uv.back, n: [0,0,1] });
+  out.push({ p: [[x1,y1,z2],[x1,y1,z1],[x1,y2,z1],[x1,y2,z2]], uv: uv.right, n: [-1,0,0] });
+  out.push({ p: [[x2,y1,z1],[x2,y1,z2],[x2,y2,z2],[x2,y2,z1]], uv: uv.left, n: [1,0,0] });
+  out.push({ p: [[x1,y2,z1],[x2,y2,z1],[x2,y2,z2],[x1,y2,z2]], uv: uv.top, n: [0,1,0] });
+  out.push({ p: [[x1,y1,z2],[x2,y1,z2],[x2,y1,z1],[x1,y1,z1]], uv: uv.bottom, n: [0,-1,0] });
+}
+
+function addFaceToMesh(face, vertices, indices) {
+  const start = vertices.length / 8;
+  const uv = uvRect(...face.uv);
+  const coords = [uv[0], uv[1], uv[2], uv[1], uv[2], uv[3], uv[0], uv[3]];
+  face.p.forEach((p, i) => vertices.push(p[0], p[1], p[2], coords[i * 2], coords[i * 2 + 1], face.n[0], face.n[1], face.n[2]));
+  indices.push(start, start + 1, start + 2, start, start + 2, start + 3);
+}
+
+function uvRect(x, y, w, h) {
+  return [x / 64, y / 64, (x + w) / 64, (y + h) / 64];
+}
+
+function headUv() {
+  return { right:[0,8,8,8], front:[8,8,8,8], left:[16,8,8,8], back:[24,8,8,8], top:[8,0,8,8], bottom:[16,0,8,8] };
+}
+function headOverlayUv() {
+  return { right:[32,8,8,8], front:[40,8,8,8], left:[48,8,8,8], back:[56,8,8,8], top:[40,0,8,8], bottom:[48,0,8,8] };
+}
+function bodyUv(x, y) {
+  return { right:[x - 4,y + 4,4,12], front:[x,y + 4,8,12], left:[x + 8,y + 4,4,12], back:[x + 12,y + 4,8,12], top:[x,y,8,4], bottom:[x + 8,y,8,4] };
+}
+function limbUv(x, y) {
+  return { right:[x,y + 4,4,12], front:[x + 4,y + 4,4,12], left:[x + 8,y + 4,4,12], back:[x + 12,y + 4,4,12], top:[x + 4,y,4,4], bottom:[x + 8,y,4,4] };
+}
+
+function uploadSkinMesh(gl, mesh) {
+  const vbo = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+  gl.bufferData(gl.ARRAY_BUFFER, mesh.vertices, gl.STATIC_DRAW);
+  const ibo = gl.createBuffer();
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, mesh.indices, gl.STATIC_DRAW);
+  return { vbo, ibo };
+}
+
+function bindSkinBuffers(gl, loc, buffers) {
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffers.vbo);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffers.ibo);
+  gl.enableVertexAttribArray(loc.pos);
+  gl.enableVertexAttribArray(loc.uv);
+  gl.enableVertexAttribArray(loc.normal);
+  gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, 32, 0);
+  gl.vertexAttribPointer(loc.uv, 2, gl.FLOAT, false, 32, 12);
+  gl.vertexAttribPointer(loc.normal, 3, gl.FLOAT, false, 32, 20);
+}
+
+function createSkinTexture(gl, source) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
+  return tex;
+}
+
+function createDefaultSkinCanvas() {
+  const c = document.createElement('canvas');
+  c.width = 64;
+  c.height = 64;
+  const ctx = c.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  ctx.fillStyle = 'rgba(0,0,0,0)';
+  ctx.fillRect(0, 0, 64, 64);
+  ctx.fillStyle = '#c88f68';
+  ctx.fillRect(8, 8, 8, 8); ctx.fillRect(0, 8, 8, 8); ctx.fillRect(16, 8, 8, 8); ctx.fillRect(24, 8, 8, 8);
+  ctx.fillStyle = '#3a271f';
+  ctx.fillRect(8, 8, 8, 2); ctx.fillRect(0, 8, 8, 2); ctx.fillRect(16, 8, 8, 2); ctx.fillRect(24, 8, 8, 2);
+  ctx.fillStyle = '#2f6fb0';
+  ctx.fillRect(20, 20, 8, 12); ctx.fillRect(16, 20, 4, 12); ctx.fillRect(28, 20, 4, 12); ctx.fillRect(32, 20, 8, 12);
+  ctx.fillStyle = '#c88f68';
+  ctx.fillRect(44, 20, 4, 12); ctx.fillRect(40, 20, 4, 12); ctx.fillRect(48, 20, 4, 12); ctx.fillRect(52, 20, 4, 12);
+  ctx.fillStyle = '#2b3f8f';
+  ctx.fillRect(4, 20, 4, 12); ctx.fillRect(0, 20, 4, 12); ctx.fillRect(8, 20, 4, 12); ctx.fillRect(12, 20, 4, 12);
+  ctx.drawImage(c, 0, 16, 16, 16, 16, 48, 16, 16);
+  ctx.drawImage(c, 40, 16, 16, 16, 32, 48, 16, 16);
+  return c;
+}
+
+function loadSkinImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Failed to decode skin image'));
+    img.src = src;
+  });
+}
+
+function normalizeSkinImage(img) {
+  const c = document.createElement('canvas');
+  c.width = 64;
+  c.height = 64;
+  const ctx = c.getContext('2d');
+  ctx.clearRect(0, 0, 64, 64);
+  ctx.drawImage(img, 0, 0);
+  if (img.height === 32) {
+    ctx.drawImage(c, 0, 16, 16, 16, 16, 48, 16, 16);
+    ctx.drawImage(c, 40, 16, 16, 16, 32, 48, 16, 16);
+  }
+  return c;
+}
+
+function mat4Perspective(fovy, aspect, near, far) {
+  const f = 1 / Math.tan(fovy / 2);
+  const nf = 1 / (near - far);
+  return new Float32Array([
+    f / aspect, 0, 0, 0,
+    0, f, 0, 0,
+    0, 0, (far + near) * nf, -1,
+    0, 0, (2 * far * near) * nf, 0,
+  ]);
+}
+
+function mat4LookAt(eye, center, up) {
+  const z = vec3Normalize([eye[0] - center[0], eye[1] - center[1], eye[2] - center[2]]);
+  const x = vec3Normalize(vec3Cross(up, z));
+  const y = vec3Cross(z, x);
+  return new Float32Array([
+    x[0], y[0], z[0], 0,
+    x[1], y[1], z[1], 0,
+    x[2], y[2], z[2], 0,
+    -vec3Dot(x, eye), -vec3Dot(y, eye), -vec3Dot(z, eye), 1,
+  ]);
+}
+
+function mat4Multiply(a, b) {
+  const out = new Float32Array(16);
+  for (let i = 0; i < 4; i++) {
+    for (let j = 0; j < 4; j++) {
+      out[i + j * 4] = a[i] * b[j * 4] + a[i + 4] * b[j * 4 + 1] + a[i + 8] * b[j * 4 + 2] + a[i + 12] * b[j * 4 + 3];
+    }
+  }
+  return out;
+}
+
+function mat4Translate(x, y, z) {
+  return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, x,y,z,1]);
+}
+function mat4RotateX(a) {
+  const c = Math.cos(a), s = Math.sin(a);
+  return new Float32Array([1,0,0,0, 0,c,s,0, 0,-s,c,0, 0,0,0,1]);
+}
+function mat4RotateY(a) {
+  const c = Math.cos(a), s = Math.sin(a);
+  return new Float32Array([c,0,-s,0, 0,1,0,0, s,0,c,0, 0,0,0,1]);
+}
+function vec3Normalize(v) {
+  const l = Math.hypot(v[0], v[1], v[2]) || 1;
+  return [v[0] / l, v[1] / l, v[2] / l];
+}
+function vec3Cross(a, b) {
+  return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+}
+function vec3Dot(a, b) {
+  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+function initSkinViewer2DFallback(canvas, statusEl, nameInput) {
+  const ctx = canvas.getContext('2d');
+  if (statusEl) statusEl.textContent = 'WebGL unavailable; using 2D preview';
+  function draw(img) {
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = Math.max(1, rect.width);
+    canvas.height = Math.max(1, rect.height);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.imageSmoothingEnabled = false;
+    const s = Math.min(canvas.width / 18, canvas.height / 34);
+    const ox = canvas.width / 2 - 4 * s;
+    const oy = Math.max(12, canvas.height / 2 - 16 * s);
+    ctx.drawImage(img, 8, 8, 8, 8, ox, oy, 8 * s, 8 * s);
+    ctx.drawImage(img, 20, 20, 8, 12, ox, oy + 8 * s, 8 * s, 12 * s);
+    ctx.drawImage(img, 44, 20, 4, 12, ox - 4 * s, oy + 8 * s, 4 * s, 12 * s);
+    ctx.drawImage(img, 36, 52, 4, 12, ox + 8 * s, oy + 8 * s, 4 * s, 12 * s);
+    ctx.drawImage(img, 4, 20, 4, 12, ox, oy + 20 * s, 4 * s, 12 * s);
+    ctx.drawImage(img, 20, 52, 4, 12, ox + 4 * s, oy + 20 * s, 4 * s, 12 * s);
+  }
+  draw(createDefaultSkinCanvas());
+  document.getElementById('skinLoadBtn')?.addEventListener('click', async () => {
+    const username = (nameInput?.value || '').trim();
+    if (!username) return;
+    try {
+      const r = await window.launcher.fetchSkin({ username });
+      if (r.error) throw new Error(r.error);
+      const img = await loadSkinImage(`data:image/png;base64,${r.skinBase64}`);
+      draw(normalizeSkinImage(img));
+      if (statusEl) statusEl.textContent = r.username || username;
+    } catch (e) {
+      if (statusEl) statusEl.textContent = e.message || 'Skin load failed';
+    }
+  });
+}
+
+// ── World Preview (seed-based biome map) ──────────────────────────────────
+function drawWorldPreview(canvas, seed) {
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+
+  const biomes = [
+    [34,139,34],    // forest
+    [0,100,0],      // dark forest
+    [144,238,144],  // plains
+    [210,180,140],  // savanna
+    [194,178,128],  // desert
+    [100,149,237],  // ocean
+    [70,130,180],   // deep ocean
+    [135,206,235],  // frozen ocean
+    [139,90,43],    // mesa
+    [85,107,47],    // jungle
+    [47,79,79],     // swamp
+    [200,220,255],  // snowy plains
+    [160,160,180],  // mountains
+  ];
+
+  let seedNum;
+  try { seedNum = Number(BigInt(seed || '0') & 0xFFFFFFFFn); }
+  catch { seedNum = 12345; }
+
+  function hash(x, y) {
+    let h = seedNum ^ (x * 1664525 + y * 1013904223);
+    h = ((h >>> 16) ^ h) * 0x45d9f3b;
+    h = ((h >>> 16) ^ h) * 0x45d9f3b;
+    h = (h >>> 16) ^ h;
+    return Math.abs(h);
+  }
+
+  const cellW = 10, cellH = 8;
+  for (let x = 0; x < W; x += cellW) {
+    for (let y = 0; y < H; y += cellH) {
+      const idx = hash(Math.floor(x/cellW), Math.floor(y/cellH)) % biomes.length;
+      const [r, g, b] = biomes[idx];
+      // Add slight brightness variation
+      const v = (hash(x, y) % 20) - 10;
+      ctx.fillStyle = `rgb(${r+v},${g+v},${b+v})`;
+      ctx.fillRect(x, y, cellW, cellH);
+    }
+  }
+
+  // Subtle vignette
+  const grad = ctx.createRadialGradient(W/2, H/2, H*0.2, W/2, H/2, H*0.8);
+  grad.addColorStop(0, 'rgba(0,0,0,0)');
+  grad.addColorStop(1, 'rgba(0,0,0,0.35)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Seed label
+  ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  ctx.font = '9px monospace';
+  ctx.fillText(`Seed: ${String(seed).slice(0, 14)}`, 4, H - 4);
+}
+
+// ── World Map Modal ────────────────────────────────────────────────────────
+document.getElementById('worldMapClose')?.addEventListener('click', () =>
+  document.getElementById('worldMapModal').style.display = 'none');
+document.getElementById('worldMapModal')?.addEventListener('click', e => {
+  if (e.target === e.currentTarget) e.currentTarget.style.display = 'none';
+});
+
+async function openWorldMapModal(w) {
+  const modal    = document.getElementById('worldMapModal');
+  const loading  = document.getElementById('worldMapLoading');
+  const errEl    = document.getElementById('worldMapError');
+  const imgWrap  = document.getElementById('worldMapImgWrap');
+  const img      = document.getElementById('worldMapImg');
+  const info     = document.getElementById('worldMapInfo');
+  const title    = document.getElementById('worldMapTitle');
+
+  title.textContent = `${w.levelName || w.folder} — World Map`;
+  modal.style.display = 'flex';
+  loading.style.display = 'flex';
+  errEl.style.display = 'none';
+  imgWrap.style.display = 'none';
+
+  const r = await window.launcher.renderWorldMap({ worldPath: w.path });
+
+  loading.style.display = 'none';
+  if (!r.success) {
+    errEl.style.display = '';
+    errEl.textContent = `⚠ ${r.error || 'Could not render map'}`;
+    return;
+  }
+
+  img.src = `data:image/bmp;base64,${r.imageBase64}`;
+  info.textContent = `${r.chunks} chunks rendered · ${r.width}×${r.height}px · Drag to scroll`;
+  imgWrap.style.display = 'flex';
 }

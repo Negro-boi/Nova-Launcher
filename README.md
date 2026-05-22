@@ -1,221 +1,259 @@
 # Nova Launcher
 
-> A fast, feature-rich, offline Minecraft launcher built with Electron.
+Nova Launcher is a feature-rich offline Minecraft launcher built with Electron. It is designed for fast local profile management, flexible modded gameplay, and a polished desktop experience without requiring an online Microsoft/Mojang login flow.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Electron](https://img.shields.io/badge/Electron-28-47848F?logo=electron)](https://electronjs.org)
-[![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933?logo=nodedotjs)](https://nodejs.org)
-![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)
+[![Electron](https://img.shields.io/badge/Electron-28-47848F?logo=electron)](https://www.electronjs.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933?logo=nodedotjs)](https://nodejs.org/)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)](#platform-support)
 
----
+## Highlights
 
-## Features
+- Launch Vanilla, Fabric, Forge, and OptiFine profiles.
+- Manage separate Minecraft instances with per-profile settings.
+- Install and manage mods, resource packs, shader packs, and Modrinth content.
+- Import assets and versions from other launchers.
+- Browse worlds, screenshots, saved servers, logs, and launcher updates from one app.
+- Auto-manage Java runtimes for modern and legacy Minecraft versions.
+- Run in offline mode with cached version metadata and local profiles.
+- Preview player skins with an integrated 3D skin viewer.
 
-### Core Launch
+## Screenshots
 
-- Offline / cracked mode — no Mojang account required
-- All Minecraft versions — releases, snapshots, old alpha and beta
-- Loader support — Vanilla, Fabric, Forge, OptiFine
-- Fabric and Forge auto-install before first launch
-- Java auto-management — downloads the correct Adoptium/Eclipse Temurin JRE (Java 8, 17, or 21)
-- Stop game button — kill the running game at any time
+Screenshots can be added here as the project evolves.
+
+| Home | Profiles | Mods |
+| --- | --- | --- |
+| `docs/screenshots/home.png` | `docs/screenshots/profiles.png` | `docs/screenshots/mods.png` |
+
+| Worlds | Assets | Settings |
+| --- | --- | --- |
+| `docs/screenshots/worlds.png` | `docs/screenshots/assets.png` | `docs/screenshots/settings.png` |
+
+## Feature Overview
+
+### Launching
+
+- Offline username-based launch flow.
+- Minecraft release, snapshot, old beta, and old alpha version browsing.
+- Fabric and Forge loader version selection.
+- OptiFine support through manual mod-folder installation.
+- Real-time launch console with progress and debug messages.
+- Stop button for canceling or terminating a running game process.
 
 ### Profiles
 
-- Multiple profiles with fully separate game directories
-- Per-profile RAM, version, loader, resolution, fullscreen, and custom Java path
-- Recently played quick-launch cards on the home screen
-- Play count and last played time tracked per profile
+- Multiple local profiles.
+- Per-profile Minecraft version, loader, RAM, resolution, fullscreen mode, Java path, and game directory.
+- Recently played profile shortcuts.
+- Profile play count and last-played tracking.
 
-### Mods
+### Mods and Modrinth
 
-- Per-profile mod manager — add, remove, enable and disable `.jar` files
-- Drag and drop `.jar` files directly into the launcher
-- Mod update checker — compares mods against Modrinth via SHA-512 hashes, one-click Update All
-- Mod conflict detector — checks Modrinth for known incompatible mod pairs
+- Add, remove, enable, disable, and drag-drop `.jar` mods.
+- Search and install Modrinth mods directly from the launcher.
+- Search and install Modrinth modpacks.
+- Check installed mods for updates using Modrinth SHA-512 matching.
+- Detect known Modrinth incompatibilities between installed mods.
+- Import and export Nova modpack ZIP archives.
 
-### Browse (Modrinth)
+### Worlds, Assets, and Media
 
-- Search and install mods directly from Modrinth, filtered by MC version and loader
-- Search and install modpacks from Modrinth
-- Modpack import and export as `.zip`
+- World manager with `level.dat` metadata parsing.
+- World backup, deletion, folder opening, and generated region overview maps.
+- Screenshot gallery with lightbox navigation.
+- Resource pack manager with enable/disable support.
+- Shader pack manager.
+- Modrinth resource pack and shader pack search/install flows.
 
-### Worlds
+### Java and System Tools
 
-- World manager with binary NBT parsing — shows name, game mode, seed, last played
-- One-click world backup to ZIP and world deletion
+- Detect bundled and system Java installations.
+- Download Adoptium/Eclipse Temurin JREs.
+- Choose Java 8, 17, or 21 based on Minecraft version needs.
+- Suggest RAM based on local system memory.
+- Analyze crash reports after abnormal game exits.
 
-### Assets
+### Import and Updates
 
-- **Resource Packs** — installed list with enable/disable, plus Modrinth browser
-- **Shader Packs** — installed list, plus Modrinth browser (OptiFine / Iris)
+- Detect installations from Official Launcher, TLauncher, Prism Launcher, MultiMC, CurseForge, GDLauncher, ATLauncher, and Modrinth App.
+- Import mods, resource packs, shader packs, and local versions.
+- Check GitHub releases for Nova Launcher updates.
+- Download and start installer updates from inside the app.
 
-### Import from Other Launchers
+## Platform Support
 
-- Auto-detects installed launchers: Official, TLauncher, Prism, MultiMC, CurseForge, GDLauncher, ATLauncher, Modrinth App
-- Browse mods, resource packs, shader packs, and versions from each launcher's instances
-- One-click import to any Nova Launcher profile (skips already existing files)
+Nova Launcher is an Electron application and is intended to run on:
 
-### Offline Mode
+- Windows 10/11
+- Linux desktop distributions supported by Electron
+- macOS versions supported by Electron
 
-- Auto-detects internet connection on startup
-- Falls back to cached version list when offline
-- Manual toggle in Settings — force offline or online mode
-- Internet-requiring features (Browse, Modrinth, update check) are automatically disabled offline
-- Installed profiles, mods, worlds, and assets always accessible offline
-
-### Screenshots
-
-- Per-profile screenshot grid
-- Full-screen lightbox viewer with keyboard navigation (← → ESC)
-
-### Servers
-
-- Saved server list with live Minecraft SLP ping
-- Shows MOTD, player count, and server version
-
-### About & Updates
-
-- Dedicated About tab with version info and repo link
-- In-app updater — detects new releases, downloads silently, installs without wizard
-- Startup loading screen with progress bar
-
-### Tools
-
-- Crash log analyzer — identifies common causes on abnormal game exit
-- RAM auto-suggest — recommends 50% of system RAM, capped at 8 GB
-- Real-time console with color-coded log levels
-
----
+The current packaged build script targets Windows. Linux and macOS packaging can be added through `electron-builder` configuration.
 
 ## Installation
 
-Download the latest release from the [Releases](https://github.com/Rosilon/Nova-launcher/releases) page.
+### Windows Release
 
-| Platform | File                             |
-| -------- | -------------------------------- |
-| Windows  | `Nova-Launcher-Setup-x.x.x.exe`  |
+1. Open the project releases page.
+2. Download the latest `Nova Launcher Setup x.x.x.exe`.
+3. Run the installer.
+4. Start Nova Launcher from the Start menu or desktop shortcut.
 
-**Windows:** run the `.exe` installer and follow the setup wizard.
+If Windows SmartScreen appears, choose **More info** and then **Run anyway** only if you trust the downloaded build source.
 
-> SmartScreen warning: click **More info → Run anyway**
-
----
-
-## Building from Source
-
-### Prerequisites
-
-- [Node.js](https://nodejs.org) 18 or newer
-- [Git](https://git-scm.com)
-
-### Steps
+### From Source
 
 ```bash
-# Clone the repository
 git clone https://github.com/Rosilon/Nova-launcher.git
 cd Nova-launcher
-
-# Install dependencies
 npm install
-
-# Run in development mode
 npm start
+```
 
-# Build Windows installer
+## Development Setup
+
+### Requirements
+
+- Node.js 18 or newer
+- npm
+- Git
+
+### Install Dependencies
+
+```bash
+npm install
+```
+
+### Run the App
+
+```bash
+npm start
+```
+
+### Build the Windows Installer
+
+```bash
 npm run build:win
 ```
 
----
+Build output is written to `dist/`.
 
 ## Project Structure
 
 ```text
-Nova-launcher/
-├── main.js          ← Electron main process
-├── preload.js       ← Context bridge
-├── package.json
+nova-launcher/
 ├── assets/
+│   ├── icon.icns
 │   ├── icon.ico
-│   ├── icon.png
-│   └── icon.icns
-└── renderer/
-    ├── index.html   ← UI layout (13 tabs)
-    ├── app.js       ← Frontend logic
-    └── style.css    ← Dark green theme
+│   └── icon.png
+├── renderer/
+│   ├── app.js          # Renderer process UI behavior
+│   ├── index.html      # Launcher layout and tabs
+│   └── style.css       # Nova visual styling
+├── main.js             # Electron main process and launcher services
+├── preload.js          # Safe context bridge API
+├── package.json        # Scripts, dependencies, and build config
+├── package-lock.json
+├── start.bat
+└── start.sh
 ```
 
----
+## Technology Stack
 
-## Tabs
-
-| Tab | Description |
-| --- | ----------- |
-| Home | Profile selector, loader, version, Play/Stop, recently played, console |
-| Profiles | Create, edit, delete and launch profiles |
-| Versions | Browse all Minecraft versions |
-| Java | Adoptium JRE status and download |
-| Mods | Mod manager, update checker, conflict detector |
-| Browse | Modrinth mod and modpack browser |
-| Screenshots | Per-profile screenshot grid with lightbox |
-| Servers | Server list with live SLP ping |
-| Worlds | World cards with NBT metadata, backup, delete |
-| Assets | Resource pack and shader pack manager with Modrinth browser |
-| Import | Import from other launchers (Official, TLauncher, Prism, etc.) |
-| About | Version info, in-app updater |
-| Settings | Username, RAM, resolution, Java path, offline mode |
-
----
+- Electron 28 for the desktop shell.
+- Node.js for local filesystem, process, networking, and archive operations.
+- `minecraft-launcher-core` for Minecraft launch orchestration.
+- `fs-extra` for reliable filesystem operations.
+- `extract-zip` and `archiver` for import, export, and backup workflows.
+- Modrinth API v2 for content search, install, update checks, and conflict metadata.
+- Mojang and Minecraft metadata APIs for versions and player skin lookup.
+- WebGL canvas rendering for the 3D skin viewer.
 
 ## Data Locations
 
-All data stored under `~/.nova-launcher/`:
+Nova stores launcher data in:
 
-| Path                  | Contents                      |
-| --------------------- | ----------------------------- |
-| `settings.json`       | Global settings               |
-| `profiles.json`       | Profile definitions           |
-| `servers.json`        | Saved server list             |
-| `versions-cache.json` | Offline version list cache    |
-| `minecraft/`          | Default game directory        |
-| `instances/<id>/`     | Per-profile game directories  |
-| `java/`               | Adoptium JRE downloads        |
-| `world-backups/`      | World ZIP backups             |
+```text
+~/.nova-launcher/
+```
 
----
+Important files and folders:
 
-## Tech Stack
+```text
+settings.json          Global launcher settings
+profiles.json          Profile definitions
+servers.json           Saved server list
+versions-cache.json    Offline Minecraft version cache
+minecraft/             Default game directory
+instances/             Per-profile game directories
+java/                  Managed Java runtimes
+world-backups/         World backup archives
+```
 
-| Technology | Purpose |
-| ---------- | ------- |
-| [Electron 28](https://electronjs.org) | Desktop app shell |
-| [minecraft-launcher-core](https://github.com/Pierce01/MinecraftLauncher-core) | Game launch engine |
-| [Adoptium / Eclipse Temurin](https://adoptium.net) | Auto-managed JRE |
-| [Modrinth API v2](https://docs.modrinth.com) | Mods, modpacks, resource packs, shaders |
-| Node.js `net` module | Minecraft SLP server ping |
-| Node.js `zlib` | Binary NBT level.dat parsing |
-| [archiver](https://www.npmjs.com/package/archiver) | World and modpack ZIP exports |
+## Troubleshooting
 
----
+### The Launcher Does Not Start
+
+- Run `npm install` again if dependencies are missing.
+- Make sure Node.js 18 or newer is installed.
+- Start from a terminal with `npm start` and inspect the error output.
+
+### Minecraft Fails to Launch
+
+- Check the real-time console in the Home tab.
+- Confirm that the selected Minecraft version has a compatible Java runtime.
+- Use the Java tab to download a managed runtime.
+- Try a clean Vanilla profile to separate launcher issues from mod issues.
+
+### Mods Do Not Load
+
+- Confirm the profile uses Fabric or Forge when required.
+- Check that mods are installed in the selected profile's `mods/` folder.
+- Verify Minecraft version and loader compatibility.
+- Use the mod conflict checker for known Modrinth incompatibilities.
+
+### Skin Preview Does Not Load
+
+- Confirm the username is a valid Minecraft username.
+- Check internet connectivity; skin lookup uses Mojang session services.
+- If WebGL is unavailable, Nova falls back to a 2D preview.
+
+### Online Features Are Disabled
+
+- Open Settings and check Offline Mode.
+- Nova may automatically enter offline mode if connectivity checks fail.
+- Modrinth search, update checks, and skin lookup require internet access.
 
 ## Contributing
 
-Pull requests are welcome. For major changes please open an issue first.
+Contributions are welcome. Please keep changes focused, incremental, and compatible with existing launcher behavior.
 
-1. Fork the repository
-2. Create a branch: `git checkout -b feature/my-feature`
-3. Commit: `git commit -m "Add my feature"`
-4. Push: `git push origin feature/my-feature`
-5. Open a Pull Request
+1. Fork the repository.
+2. Create a feature branch.
+3. Make your changes.
+4. Run syntax checks and start the launcher locally.
+5. Open a pull request with a clear summary and test notes.
 
----
+Useful checks:
+
+```bash
+node --check main.js
+node --check preload.js
+node --check renderer/app.js
+npm run build:win
+```
+
+## Security Notes
+
+Nova uses Electron context isolation and exposes renderer functionality through `preload.js`. Main-process IPC handlers should validate paths, filenames, URLs, and external inputs before performing filesystem or network operations.
+
+When adding features, prefer narrow IPC methods over exposing generic filesystem or shell access.
 
 ## License
 
-MIT — see [LICENSE](LICENSE) for details.
-
----
+Nova Launcher is released under the MIT License. See [LICENSE](LICENSE) for details.
 
 ## Disclaimer
 
-Nova Launcher is an unofficial third-party launcher and is not affiliated with or endorsed by Mojang Studios or Microsoft. Minecraft is a trademark of Mojang Studios.
+Nova Launcher is an unofficial third-party Minecraft launcher. It is not affiliated with, endorsed by, or sponsored by Mojang Studios or Microsoft. Minecraft is a trademark of Mojang Studios. Use this project responsibly and comply with Minecraft's applicable terms and licenses.

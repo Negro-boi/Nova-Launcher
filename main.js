@@ -1,12 +1,14 @@
 const { app, BrowserWindow, ipcMain, shell, protocol, net: electronNet } = require('electron');
 const path = require('path');
 const fs = require('fs-extra');
+const fsp = require('fs/promises');
 const https = require('https');
 const http = require('http');
 const net = require('net');
 const crypto = require('crypto');
 const { spawn, exec } = require('child_process');
 const os = require('os');
+const { pathToFileURL } = require('url');
 
 let mainWindow;
 const LAUNCHER_DIR   = path.join(os.homedir(), '.nova-launcher');
@@ -20,6 +22,21 @@ const VERSIONS_CACHE = path.join(LAUNCHER_DIR, 'versions-cache.json');
 
 let packageVersion = '4.1.729';
 try { packageVersion = require('./package.json').version; } catch {}
+
+function isPathInside(childPath, parentPath) {
+  const child = path.resolve(childPath);
+  const parent = path.resolve(parentPath);
+  const rel = path.relative(parent, child);
+  return rel === '' || (!!rel && !rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
+function isLauncherPath(filePath) {
+  return isPathInside(filePath, LAUNCHER_DIR);
+}
+
+function fileNameOnly(name) {
+  return path.basename(String(name || ''));
+}
 
 async function ensureDirs() {
   await fs.ensureDir(LAUNCHER_DIR);
@@ -49,7 +66,7 @@ function createWindow() {
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   mainWindow.once('ready-to-show', () => mainWindow.show());
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    if (/^https?:\/\//i.test(url)) shell.openExternal(url);
     return { action: 'deny' };
   });
 }
@@ -61,7 +78,10 @@ app.whenReady().then(async () => {
   protocol.handle('nova', (request) => {
     const raw = request.url.replace(/^nova:\/\/[^/]*/, '');
     const filePath = decodeURIComponent(raw);
-    return electronNet.fetch('file://' + filePath);
+    if (!isLauncherPath(filePath)) {
+      return new Response('Forbidden', { status: 403 });
+    }
+    return electronNet.fetch(pathToFileURL(filePath).toString());
   });
 
   createWindow();
@@ -92,6 +112,38 @@ ipcMain.on('kill-game', () => {
 });
 
 // ── Minecraft versions ───────────────────────────────────────────────────────
+// ── Skin fetcher (bypasses CORS) ──────────────────────────────────────────
+ipcMain.handle('fetch-skin', async (_, { username }) => {
+  try {
+    const safeName = String(username || '').trim();
+    if (!/^[A-Za-z0-9_]{3,16}$/.test(safeName)) return { error: 'Invalid Minecraft username' };
+
+    // Step 1: get UUID
+    const profileData = await fetchJson(`https://api.mojang.com/users/profiles/minecraft/${encodeURIComponent(safeName)}`);
+    if (!profileData?.id) return { error: 'Player not found' };
+    const uuid = profileData.id;
+
+    // Step 2: get skin URL
+    const sessionData = await fetchJson(`https://sessionserver.mojang.com/session/minecraft/profile/${uuid}`);
+    const texProp = (sessionData.properties || []).find(p => p.name === 'textures');
+    if (!texProp) return { error: 'No texture data' };
+    const texData = JSON.parse(Buffer.from(texProp.value, 'base64').toString('utf8'));
+    const skinUrl = texData.textures?.SKIN?.url;
+    if (!skinUrl) return { error: 'No skin URL' };
+
+    // Force https (Mojang sometimes returns http)
+    const safeSkinUrl = skinUrl.replace(/^http:\/\//, 'https://');
+
+    // Step 3: download skin as base64
+    const imgBuffer = await fetchBuffer(safeSkinUrl, { maxBytes: 1024 * 1024, timeout: 10000 });
+    if (imgBuffer.length < 8 || imgBuffer[0] !== 0x89 || imgBuffer[1] !== 0x50) {
+      return { error: 'Invalid skin image' };
+    }
+
+    return { success: true, uuid, skinBase64: imgBuffer.toString('base64'), username: profileData.name };
+  } catch (e) { return { error: e.message }; }
+});
+
 ipcMain.handle('list-dir', async (_, { path: dirPath }) => {
   try {
     const resolved = dirPath === '__MC_VERSIONS__'
@@ -231,7 +283,6 @@ ipcMain.handle('save-profiles', async (_, profiles) => {
 ipcMain.handle('create-profile', async (_, overrides) => {
   const profile = makeProfile(overrides);
   await fs.ensureDir(profile.gameDir);
-  const profiles = await ipcMain.emit ? [] : [];
   let list = [];
   try { list = await fs.readJson(PROFILES_FILE); } catch {}
   list.push(profile);
@@ -354,16 +405,17 @@ ipcMain.handle('add-mod', async (_, { gameDir, profile, srcPath }) => {
 });
 
 ipcMain.handle('delete-mod', async (_, { gameDir, profile, file }) => {
-  await fs.remove(path.join(gameDir || MC_DIR, 'mods', file));
+  await fs.remove(path.join(gameDir || MC_DIR, 'mods', fileNameOnly(file)));
   return { success: true };
 });
 
 ipcMain.handle('toggle-mod', async (_, { gameDir, profile, file, enabled }) => {
   const modsDir = path.join(gameDir || MC_DIR, 'mods');
-  const oldPath = path.join(modsDir, file);
+  const safeFile = fileNameOnly(file);
+  const oldPath = path.join(modsDir, safeFile);
   const newPath = enabled
-    ? path.join(modsDir, file.replace('.disabled', ''))
-    : path.join(modsDir, file.endsWith('.disabled') ? file : file + '.disabled');
+    ? path.join(modsDir, safeFile.replace('.disabled', ''))
+    : path.join(modsDir, safeFile.endsWith('.disabled') ? safeFile : safeFile + '.disabled');
   if (oldPath !== newPath) await fs.rename(oldPath, newPath);
   return { success: true };
 });
@@ -428,10 +480,12 @@ ipcMain.handle('check-mod-updates', async (_, { gameDir, profile }) => {
 
 ipcMain.handle('update-mod', async (_, { gameDir, profile, oldFilename, newFileUrl, newFilename }) => {
   const modsDir = path.join(gameDir || MC_DIR, 'mods');
-  const destPath = path.join(modsDir, newFilename);
+  const safeOld = fileNameOnly(oldFilename);
+  const safeNew = fileNameOnly(newFilename);
+  const destPath = path.join(modsDir, safeNew);
   try {
     await downloadFileWithProgress(newFileUrl, destPath, () => {});
-    await fs.remove(path.join(modsDir, oldFilename));
+    await fs.remove(path.join(modsDir, safeOld));
     return { success: true };
   } catch (e) {
     return { success: false, error: e.message };
@@ -1135,7 +1189,7 @@ async function setEnabledResourcePacks(gameDir, packs) {
 ipcMain.handle('toggle-resourcepack', async (_, { gameDir, name, enabled }) => {
   const root = gameDir || MC_DIR;
   const current = await getEnabledResourcePacks(root);
-  const key = `file/${name}`;
+  const key = `file/${fileNameOnly(name)}`;
   let updated;
   if (enabled) updated = current.includes(key) ? current : [...current, key];
   else updated = current.filter(p => p !== key);
@@ -1151,7 +1205,7 @@ ipcMain.handle('add-resourcepack', async (_, { gameDir, srcPath }) => {
 });
 
 ipcMain.handle('delete-resourcepack', async (_, { gameDir, name }) => {
-  await fs.remove(path.join(gameDir || MC_DIR, 'resourcepacks', name));
+  await fs.remove(path.join(gameDir || MC_DIR, 'resourcepacks', fileNameOnly(name)));
   return { success: true };
 });
 
@@ -1188,7 +1242,7 @@ ipcMain.handle('add-shaderpack', async (_, { gameDir, srcPath }) => {
 });
 
 ipcMain.handle('delete-shaderpack', async (_, { gameDir, name }) => {
-  await fs.remove(path.join(gameDir || MC_DIR, 'shaderpacks', name));
+  await fs.remove(path.join(gameDir || MC_DIR, 'shaderpacks', fileNameOnly(name)));
   return { success: true };
 });
 
@@ -1297,6 +1351,17 @@ ipcMain.handle('get-worlds', async (_, { gameDir }) => {
     } catch {}
   }
   return worlds.sort((a, b) => (b.lastPlayed || b.mtime) - (a.lastPlayed || a.mtime));
+});
+
+ipcMain.handle('render-world-map', async (_, { worldPath }) => {
+  try {
+    if (!worldPath || !await fs.pathExists(worldPath)) {
+      return { success: false, error: 'World folder not found' };
+    }
+    return await renderWorldMapOverview(worldPath);
+  } catch (e) {
+    return { success: false, error: e.message || String(e) };
+  }
 });
 
 ipcMain.handle('open-world-folder', async (_, { worldPath }) => {
@@ -1464,6 +1529,131 @@ ipcMain.handle('launch-minecraft', async (_, { username, version, ram, javaPath,
 // HELPERS
 // ══════════════════════════════════════════════════════════════════════════════
 
+async function renderWorldMapOverview(worldPath) {
+  const regionDir = path.join(worldPath, 'region');
+  if (!await fs.pathExists(regionDir)) {
+    return { success: false, error: 'No region folder found. Open the world in Minecraft first.' };
+  }
+
+  const regionFiles = (await fs.readdir(regionDir))
+    .map(name => ({ name, match: /^r\.(-?\d+)\.(-?\d+)\.mca$/i.exec(name) }))
+    .filter(entry => entry.match);
+
+  if (!regionFiles.length) {
+    return { success: false, error: 'No generated region files found.' };
+  }
+
+  const chunks = [];
+  for (const { name, match } of regionFiles) {
+    const rx = parseInt(match[1], 10);
+    const rz = parseInt(match[2], 10);
+    const filePath = path.join(regionDir, name);
+    let fd;
+    try {
+      fd = await fsp.open(filePath, 'r');
+      const header = Buffer.alloc(4096);
+      await fd.read(header, 0, 4096, 0);
+
+      for (let i = 0; i < 1024; i++) {
+        const offset = header.readUIntBE(i * 4, 3);
+        const sectors = header[i * 4 + 3];
+        if (!offset || !sectors) continue;
+        const cx = i % 32;
+        const cz = Math.floor(i / 32);
+        chunks.push({ x: rx * 32 + cx, z: rz * 32 + cz });
+      }
+    } catch {}
+    finally {
+      if (fd) await fd.close().catch(() => {});
+    }
+  }
+
+  if (!chunks.length) {
+    return { success: false, error: 'Region files are present, but no chunks were found.' };
+  }
+
+  const minX = Math.min(...chunks.map(c => c.x));
+  const maxX = Math.max(...chunks.map(c => c.x));
+  const minZ = Math.min(...chunks.map(c => c.z));
+  const maxZ = Math.max(...chunks.map(c => c.z));
+  const chunkW = maxX - minX + 1;
+  const chunkH = maxZ - minZ + 1;
+  const maxImage = 960;
+  const cell = Math.max(1, Math.min(8, Math.floor(maxImage / Math.max(chunkW, chunkH))));
+  const width = Math.max(64, chunkW * cell);
+  const height = Math.max(64, chunkH * cell);
+  const rgb = Buffer.alloc(width * height * 3, 13);
+
+  const setPixel = (x, y, r, g, b) => {
+    if (x < 0 || y < 0 || x >= width || y >= height) return;
+    const idx = (y * width + x) * 3;
+    rgb[idx] = r;
+    rgb[idx + 1] = g;
+    rgb[idx + 2] = b;
+  };
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const vignette = Math.hypot((x / width) - 0.5, (y / height) - 0.5);
+      const shade = Math.max(0, Math.floor(18 - vignette * 18));
+      setPixel(x, y, 12 + shade, 17 + shade, 18 + shade);
+    }
+  }
+
+  for (const c of chunks) {
+    const px = (c.x - minX) * cell;
+    const py = (c.z - minZ) * cell;
+    const h = Math.abs(((c.x * 73856093) ^ (c.z * 19349663)) >>> 0);
+    const r = 36 + (h % 42);
+    const g = 105 + (h % 86);
+    const b = 58 + (h % 44);
+    for (let yy = 0; yy < cell; yy++) {
+      for (let xx = 0; xx < cell; xx++) {
+        const edge = xx === 0 || yy === 0;
+        setPixel(px + xx, py + yy, edge ? 20 : r, edge ? 54 : g, edge ? 31 : b);
+      }
+    }
+  }
+
+  return {
+    success: true,
+    imageBase64: encodeBmp24(rgb, width, height).toString('base64'),
+    width,
+    height,
+    chunks: chunks.length,
+  };
+}
+
+function encodeBmp24(rgb, width, height) {
+  const rowStride = Math.ceil((width * 3) / 4) * 4;
+  const imageSize = rowStride * height;
+  const fileSize = 54 + imageSize;
+  const out = Buffer.alloc(fileSize);
+
+  out.write('BM', 0, 'ascii');
+  out.writeUInt32LE(fileSize, 2);
+  out.writeUInt32LE(54, 10);
+  out.writeUInt32LE(40, 14);
+  out.writeInt32LE(width, 18);
+  out.writeInt32LE(height, 22);
+  out.writeUInt16LE(1, 26);
+  out.writeUInt16LE(24, 28);
+  out.writeUInt32LE(imageSize, 34);
+
+  for (let y = 0; y < height; y++) {
+    const srcY = height - 1 - y;
+    const dstRow = 54 + y * rowStride;
+    for (let x = 0; x < width; x++) {
+      const src = (srcY * width + x) * 3;
+      const dst = dstRow + x * 3;
+      out[dst] = rgb[src + 2];
+      out[dst + 1] = rgb[src + 1];
+      out[dst + 2] = rgb[src];
+    }
+  }
+  return out;
+}
+
 // ── NBT level.dat parser ──────────────────────────────────────────────────────
 async function parseLevelDat(filePath) {
   try {
@@ -1593,6 +1783,40 @@ function downloadFileWithProgress(url, dest, onProgress) {
       res.on('end',   () => { file.end(); resolve(); });
       res.on('error', reject);
     }).on('error', reject);
+  });
+}
+
+function fetchBuffer(url, { maxBytes = 5 * 1024 * 1024, timeout = 15000, redirects = 3 } = {}) {
+  return new Promise((resolve, reject) => {
+    const mod = url.startsWith('https') ? https : http;
+    const req = mod.get(url, { headers: { 'User-Agent': 'nova-launcher/1.0' }, timeout }, (res) => {
+      if ([301, 302, 303, 307, 308].includes(res.statusCode)) {
+        res.resume();
+        if (!redirects || !res.headers.location) return reject(new Error('Too many redirects'));
+        const next = new URL(res.headers.location, url).toString();
+        fetchBuffer(next, { maxBytes, timeout, redirects: redirects - 1 }).then(resolve).catch(reject);
+        return;
+      }
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        res.resume();
+        reject(new Error(`HTTP ${res.statusCode}`));
+        return;
+      }
+      const chunks = [];
+      let size = 0;
+      res.on('data', chunk => {
+        size += chunk.length;
+        if (size > maxBytes) {
+          req.destroy(new Error('Response too large'));
+          return;
+        }
+        chunks.push(chunk);
+      });
+      res.on('end', () => resolve(Buffer.concat(chunks)));
+      res.on('error', reject);
+    });
+    req.on('timeout', () => req.destroy(new Error('Request timed out')));
+    req.on('error', reject);
   });
 }
 
