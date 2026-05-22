@@ -1,6 +1,6 @@
 {
   "name": "nova-launcher",
-  "version": "4.1.729",
+  "version": "4.2.0",
   "description": "A fast, offline Minecraft launcher built with Electron",
   "main": "main.js",
   "scripts": {
